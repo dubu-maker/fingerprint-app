@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>이미지 업로드</title>
+</head>
+<body>
+    <h1>디지털 핑거프린팅을 위한 이미지 업로드</h1>
+    <p>{{ session.username }}님의 고유 정보가 이미지에 삽입됩니다.</p>
+    
+    <form method="post" enctype="multipart/form-data">
+        <input type="file" name="file">
+        <input type="submit" value="업로드 및 핑거프린팅">
+    </form>
+</body>
+</html>

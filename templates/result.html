@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>업로드 성공</title>
+</head>
+<body>
+    <h1>파일 업로드 및 핑거프린팅 성공</h1>
+    <p>'{{ filename }}' 파일이 성공적으로 업로드되었습니다.</p>
+    
+    <img src="{{ url_for('uploaded_file', filename=filename) }}" alt="Uploaded Image" width="500">
+    
+    <br><br>
+    <a href="{{ url_for('home') }}">홈으로 돌아가기</a>
+</body>
+</html>

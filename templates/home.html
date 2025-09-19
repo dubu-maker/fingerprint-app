@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  {% if session.username %}
+    {# --- 로그인 상태 --- #}
+    {% if session.role == 'admin' %}
+      {# === 관리자용 대시보드 === #}
+      <h1 class="display-5 fw-bold mb-4">관리자 대시보드</h1>
+      <div class="row">
+        <div class="col-md-4">
+          <div class="card text-white bg-primary mb-3">
+            <div class="card-header">총 사용자 수</div>
+            <div class="card-body">
+              <h5 class="card-title display-4">{{ user_count }} 명</h5>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-8">
+          <div class="card">
+            <div class="card-header">최근 가입 사용자 (최대 5명)</div>
+            <div class="card-body">
+              <ul class="list-group list-group-flush">
+                {% for user in recent_users %}
+                  <li class="list-group-item d-flex justify-content-between align-items-center">
+                    {{ user.username }} ({{ user.role }})
+                    <span class="badge bg-secondary rounded-pill">{{ user.plan }}</span>
+                  </li>
+                {% else %}
+                  <li class="list-group-item">아직 가입한 사용자가 없습니다.</li>
+                {% endfor %}
+              </ul>
+              <a href="{{ url_for('show_users') }}" class="btn btn-outline-primary mt-3">전체 사용자 목록 보기</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    {% else %}
+      {# === 일반 사용자용 메인 화면 (동영상 플레이어) === #}
+      <div class="p-5 mb-4 bg-light rounded-3 text-center">
+        <div class="container-fluid py-5">
+          
+          <div class="ratio ratio-16x9 mb-4">
+            <video class="rounded-3" controls autoplay muted loop>
+              <source src="{{ url_for('serve_video', token=video_token) }}" type="video/mp4">
+              브라우저가 비디오 태그를 지원하지 않습니다.
+            </video>
+          </div>
+
+          <h1 class="display-5 fw-bold">{{ session.username }}님, 환영합니다!</h1>
+          <p class="fs-4">
+            등급: <strong>{{ session.plan }}</strong> ({{ '1080p 고화질' if session.plan == 'premium' else '720p 일반화질' }} 이용 가능)
+          </p>
+          <a class="btn btn-primary btn-lg mt-3" href="{{ url_for('upload_file') }}">이미지 업로드하기</a>
+        </div>
+      </div>
+    {% endif %}
+
+  {% else %}
+    {# --- 로그아웃 상태 (배너 이미지 표시) --- #}
+    <div class="p-5 mb-4 bg-light rounded-3 text-center">
+      <div class="container-fluid py-5">
+        <img src="{{ url_for('static', filename='images/main_banner.jpg') }}" class="img-fluid rounded-3 mb-4" alt="Main Banner Image" style="max-width: 60%;">
+        <h1 class="display-5 fw-bold">홈페이지에 오신 것을 환영합니다!</h1>
+        <p class="col-lg-8 mx-auto fs-4">
+          이곳은 디지털 핑거프린팅 기술을 학습하고 테스트하기 위한 웹 애플리케이션입니다.
+          로그인 또는 회원가입 후 시작해 주세요.
+        </p>
+        <a class="btn btn-primary btn-lg" href="{{ url_for('login') }}">로그인</a>
+        <a class="btn btn-secondary btn-lg" href="{{ url_for('register') }}">회원가입</a>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}

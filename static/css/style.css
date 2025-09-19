@@ -1,0 +1,12 @@
+/* 내비게이션 바의 가운데 메뉴를 위한 스타일 */
+.navbar-nav.centered {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+/* 메뉴 간 간격 조절 */
+.navbar-nav .nav-link {
+    padding-right: 1rem;
+    padding-left: 1rem;
+}
