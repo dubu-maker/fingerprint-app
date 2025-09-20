@@ -1,16 +1,24 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <title>업로드 성공</title>
-</head>
-<body>
-    <h1>파일 업로드 및 핑거프린팅 성공</h1>
-    <p>'{{ filename }}' 파일이 성공적으로 업로드되었습니다.</p>
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8 text-center">
+    <div class="alert alert-success" role="alert">
+      <h4 class="alert-heading">핑거프린팅 성공!</h4>
+      <p>'{{ filename }}' 파일에 핑거프린트가 성공적으로 삽입되었습니다.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title mb-3">결과 이미지</h5>
+        <img src="{{ url_for('uploaded_file', filename=filename) }}" class="img-fluid rounded-3" alt="Uploaded Image">
+      </div>
+    </div>
     
-    <img src="{{ url_for('uploaded_file', filename=filename) }}" alt="Uploaded Image" width="500">
-    
-    <br><br>
-    <a href="{{ url_for('home') }}">홈으로 돌아가기</a>
-</body>
-</html>
+    <div class="mt-4">
+      <a href="{{ url_for('home') }}" class="btn btn-secondary">홈으로 돌아가기</a>
+      <a href="{{ url_for('upload_file') }}" class="btn btn-info">다른 이미지 업로드</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

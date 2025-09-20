@@ -1,16 +1,26 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <title>이미지 업로드</title>
-</head>
-<body>
-    <h1>디지털 핑거프린팅을 위한 이미지 업로드</h1>
-    <p>{{ session.username }}님의 고유 정보가 이미지에 삽입됩니다.</p>
-    
-    <form method="post" enctype="multipart/form-data">
-        <input type="file" name="file">
-        <input type="submit" value="업로드 및 핑거프린팅">
-    </form>
-</body>
-</html>
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-body text-center">
+        <h1 class="card-title">디지털 핑거프린팅</h1>
+        <p class="card-text text-muted">
+          '{{ session.username }}'님의 고유 정보가 이미지에 삽입됩니다.<br>
+          아래에서 핑거프린트를 적용할 이미지를 선택하세요.
+        </p>
+        
+        <form method="post" enctype="multipart/form-data" class="mt-4">
+          <div class="input-group">
+            <input type="file" class="form-control" name="file" required>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-upload"></i> 업로드 및 적용
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
