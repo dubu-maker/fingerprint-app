@@ -10,7 +10,7 @@ from PIL import Image
 
 # 1. 애플리케이션 및 기본 설정
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default_secret_key_for_local_dev')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'a_very_secret_key_for_local_dev')
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -34,9 +34,6 @@ class User(db.Model):
     plan = db.Column(db.String(20), nullable=False, default='basic')
     images = db.relationship('Image', backref='author', lazy=True)
 
-    def __repr__(self):
-        return f'<User {self.username}>'
-
 class Image(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(100), nullable=False)
@@ -44,10 +41,7 @@ class Image(db.Model):
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
-    def __repr__(self):
-        return f'<Image {self.filename}>'
-
-# 4. 헬퍼 함수 (핑거프린팅, 파일 검사 등)
+# 4. 헬퍼 함수
 def embed_fingerprint(image_path, text_to_embed):
     try:
         img = Image.open(image_path).convert('RGB')
@@ -82,7 +76,6 @@ def extract_fingerprint(image_path):
         img = Image.open(image_path).convert('RGB')
         pixels = img.load()
         binary_text = ""
-        # 텍스트가 길어질 경우를 대비해 충분히 많은 비트를 읽도록 한계 설정
         limit = 2000 
         
         for y in range(img.height):
@@ -131,12 +124,11 @@ def register():
         password = request.form['password']
         
         username_regex = re.compile(r'^[a-zA-Z0-9_]{4,20}$')
-        password_regex = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$')
-
         if not username_regex.match(username):
             flash('사용자 이름은 4~20자의 영문, 숫자, 언더바(_)만 사용할 수 있습니다.', 'error')
             return redirect(url_for('register'))
         
+        password_regex = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$')
         if not password_regex.match(password):
             flash('비밀번호는 최소 8자 이상이며, 대/소문자, 숫자, 특수문자(@$!%*?&)를 각각 하나 이상 포함해야 합니다.', 'error')
             return redirect(url_for('register'))
@@ -149,7 +141,6 @@ def register():
         hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
         
         role = 'admin' if User.query.count() == 0 else 'user'
-
         new_user = User(username=username, password=hashed_password, role=role)
         db.session.add(new_user)
         db.session.commit()
@@ -164,9 +155,7 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        
         user = User.query.filter_by(username=username).first()
-        
         if user and check_password_hash(user.password, password):
             session['user_id'] = user.id
             session['username'] = user.username
@@ -175,7 +164,6 @@ def login():
             return redirect(url_for('home'))
         else:
             flash('사용자 이름이 없거나 비밀번호가 틀렸습니다.', 'error')
-            
     return render_template('login.html')
 
 @app.route('/logout')
@@ -198,11 +186,9 @@ def delete_user(user_id):
     if session.get('role') != 'admin':
         flash('삭제 권한이 없습니다.', 'error')
         return redirect(url_for('home'))
-        
     user_to_delete = User.query.get_or_404(user_id)
     db.session.delete(user_to_delete)
     db.session.commit()
-    
     flash(f'사용자 ID {user_id}가 성공적으로 삭제되었습니다.')
     return redirect(url_for('show_users'))
 
@@ -211,16 +197,13 @@ def update_plan(user_id):
     if session.get('role') != 'admin':
         flash('권한이 없습니다.', 'error')
         return redirect(url_for('home'))
-
     new_plan = request.form.get('plan')
     if new_plan not in ['basic', 'premium']:
         flash('잘못된 등급입니다.', 'error')
         return redirect(url_for('show_users'))
-
     user_to_update = User.query.get_or_404(user_id)
     user_to_update.plan = new_plan
     db.session.commit()
-    
     flash(f'{user_to_update.username} 사용자의 등급이 {new_plan}(으)로 변경되었습니다.')
     return redirect(url_for('show_users'))
 
@@ -238,40 +221,36 @@ def upload_file():
             flash('선택된 파일이 없습니다.')
             return redirect(request.url)
         if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(file_path)
+            original_filename = secure_filename(file.filename)
+            original_file_path = os.path.join(app.config['UPLOAD_FOLDER'], original_filename)
+            file.save(original_file_path)
             
-            fingerprint_data = session['username']
+            fingerprinted_path = embed_fingerprint(original_file_path, session['username'])
             
-            new_image = Image(filename=filename, 
-                              fingerprint_text=fingerprint_data, 
-                              user_id=session['user_id'])
-            db.session.add(new_image)
-            db.session.commit()
-
-            flash(f"'{filename}' 파일이 성공적으로 업로드되었습니다.")
-            return redirect(url_for('upload_success', filename=filename))
+            if fingerprinted_path:
+                fingerprinted_filename = os.path.basename(fingerprinted_path)
+                new_image = Image(filename=original_filename, 
+                                  fingerprint_text=session['username'], 
+                                  user_id=session['user_id'])
+                db.session.add(new_image)
+                db.session.commit()
+                flash(f"'{original_filename}' 파일에 핑거프린트를 삽입했습니다.")
+                return redirect(url_for('upload_success', filename=fingerprinted_filename))
+            else:
+                flash('핑거프린트 삽입에 실패했습니다.', 'error')
+                return redirect(request.url)
         else:
             flash('허용된 파일 형식이 아닙니다. (png, jpg, jpeg, gif)', 'error')
             return redirect(request.url)
     return render_template('upload.html')
-
-@app.route('/success/<filename>')
-def upload_success(filename):
-    return render_template('result.html', filename=filename)
-
-@app.route('/uploads/<filename>')
-def uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 @app.route('/my-images')
 def my_images():
     if 'user_id' not in session:
         flash('먼저 로그인하세요.', 'error')
         return redirect(url_for('login'))
-    user_images = Image.query.filter_by(user_id=session['user_id']).order_by(Image.timestamp.desc()).all()
-    return render_template('my_images.html', images=user_images)
+    user = User.query.get(session['user_id'])
+    return render_template('my_images.html', images=user.images)
 
 @app.route('/verify', methods=['GET', 'POST'])
 def verify_fingerprint():
@@ -292,16 +271,22 @@ def verify_fingerprint():
             return render_template('verify.html', result=result)
     return render_template('verify.html')
 
+@app.route('/success/<filename>')
+def upload_success(filename):
+    return render_template('result.html', filename=filename)
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 @app.route('/serve_video/<token>')
 def serve_video(token):
     if 'user_id' not in session:
         return "Access Denied", 403
-
     try:
         filename = s.loads(token, max_age=30)
     except:
         return "Invalid or expired link.", 403
-
     if (session.get('plan') == 'premium' and filename == 'video_1080p.mp4') or \
        (session.get('plan') != 'premium' and filename == 'video_720p.mp4'):
         return send_from_directory(os.path.join(app.config['STATIC_FOLDER'], 'videos'), filename)
