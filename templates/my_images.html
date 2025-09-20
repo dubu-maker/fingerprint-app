@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1 class="mb-4">내 이미지 갤러리</h1>
+
+{% if images %}
+  <div class="row row-cols-1 row-cols-md-3 g-4">
+    {% for image in images %}
+      <div class="col">
+        <div class="card h-100">
+          <img src="{{ url_for('uploaded_file', filename=image.filename.split('.')[0] + '_fp.' + image.filename.split('.')[1]) }}" class="card-img-top" alt="{{ image.filename }}">
+          <div class="card-body">
+            <h5 class="card-title">{{ image.filename }}</h5>
+            <p class="card-text">
+              <small class="text-muted">
+                업로드: {{ image.timestamp.strftime('%Y-%m-%d %H:%M') }}<br>
+                삽입된 텍스트: <strong>{{ image.fingerprint_text }}</strong>
+              </small>
+            </p>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="alert alert-secondary text-center">
+    아직 업로드한 이미지가 없습니다. '이미지 업로드' 메뉴에서 첫 이미지를 업로드해 보세요!
+  </div>
+{% endif %}
+{% endblock %}

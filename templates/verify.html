@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <h1 class="text-center mb-4">핑거프린트 검증</h1>
+    <p class="text-center text-muted">핑거프린트가 삽입된 이미지를 업로드하여 숨겨진 소유자 정보를 확인합니다.</p>
+    
+    <form method="post" enctype="multipart/form-data" class="mb-4">
+      <div class="input-group">
+        <input type="file" name="file" class="form-control" required>
+        <button type="submit" class="btn btn-success">
+          <i class="bi bi-patch-check"></i> 검증하기
+        </button>
+      </div>
+    </form>
+
+    {% if result %}
+      <div class="alert alert-info text-center">
+        <h4 class="alert-heading">추출된 핑거프린트</h4>
+        <p class="display-6">{{ result }}</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

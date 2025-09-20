@@ -5,8 +5,8 @@ import os
 import re
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-# itsdangerous 라이브러리에서 URL-safe 시리얼라이저를 import 합니다.
 from itsdangerous import URLSafeTimedSerializer
+from PIL import Image
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default_secret_key_for_local_dev')
@@ -28,6 +28,45 @@ UPLOAD_FOLDER = 'uploads'
 app.config['STATIC_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+def embed_fingerprint(image_path, text_to_embed):
+    try:
+        # ... (이전과 동일한 embed_fingerprint 함수)
+    except Exception as e:
+        print(f"Error embedding: {e}")
+        return None
+
+def extract_fingerprint(image_path):
+    try:
+        img = Image.open(image_path).convert('RGB')
+        pixels = img.load()
+        binary_text = ""
+        # 8비트 * (텍스트길이 + 1) 만큼만 읽어서 속도 향상
+        # 충분히 큰 값으로 설정하거나, 이미지 전체를 읽어도 무방
+        limit = (len(session.get('username', '')) + 1) * 8 
+        
+        for y in range(img.height):
+            for x in range(img.width):
+                pixel = pixels[x, y]
+                for i in range(3):
+                    binary_text += str(pixel[i] & 1)
+                    if len(binary_text) >= limit * 3: # 충분한 비트를 읽었으면 조기 종료
+                        break
+                if len(binary_text) >= limit * 3:
+                    break
+            if len(binary_text) >= limit * 3:
+                break
+        
+        all_bytes = [binary_text[i: i+8] for i in range(0, len(binary_text), 8)]
+        decoded_text = ""
+        for byte in all_bytes:
+            if byte == '11111111': # 종료 신호
+                return decoded_text
+            decoded_text += chr(int(byte, 2))
+        return "종료 신호를 찾을 수 없거나 데이터가 없습니다."
+    except Exception as e:
+        print(f"Error extracting: {e}")
+        return "추출 중 오류 발생"
 
 # --- DB 모델 정의 ---
 class User(db.Model):
@@ -210,6 +249,38 @@ def upload_file():
             return redirect(request.url)
     return render_template('upload.html')
 
+# --- '내 이미지' 갤러리 라우트 추가 ---
+@app.route('/my-images')
+def my_images():
+    if 'user_id' not in session:
+        flash('먼저 로그인하세요.', 'error')
+        return redirect(url_for('login'))
+    user_images = Image.query.filter_by(user_id=session['user_id']).order_by(Image.timestamp.desc()).all()
+    return render_template('my_images.html', images=user_images)
+
+# --- 핑거프린트 검증 라우트 추가 ---
+@app.route('/verify', methods=['GET', 'POST'])
+def verify_fingerprint():
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            flash('파일이 없습니다.', 'error')
+            return redirect(request.url)
+        file = request.files['file']
+        if file.filename == '':
+            flash('선택된 파일이 없습니다.', 'error')
+            return redirect(request.url)
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{filename}")
+            file.save(temp_path)
+            
+            result = extract_fingerprint(temp_path)
+            
+            os.remove(temp_path)
+            
+            return render_template('verify.html', result=result)
+    return render_template('verify.html')
+
 @app.route('/success/<filename>')
 def upload_success(filename):
     return render_template('result.html', filename=filename)
@@ -217,6 +288,15 @@ def upload_success(filename):
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/my-images')
+def my_images():
+    if 'user_id' not in session:
+        flash('먼저 로그인하세요.', 'error')
+        return redirect(url_for('login'))
+
+    user_images = Image.query.filter_by(user_id=session['user_id']).order_by(Image.timestamp.desc()).all()
+    return render_template('my_images.html', images=user_images)
 
 @app.route('/serve_video/<token>')
 def serve_video(token):
