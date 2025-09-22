@@ -11,7 +11,7 @@ import secrets
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from itsdangerous import URLSafeTimedSerializer
-from PIL import Image
+from PIL import Image as PILImage
 
 # 1. 애플리케이션 및 기본 설정
 app = Flask(__name__)
@@ -29,7 +29,14 @@ s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
 UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['STATIC_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+default_extensions = {'png', 'jpg', 'jpeg', 'gif'}
+configured_extensions = os.environ.get('ALLOWED_UPLOAD_EXTENSIONS')
+if configured_extensions:
+    app.config['ALLOWED_UPLOAD_EXTENSIONS'] = {
+        ext.strip().lower() for ext in configured_extensions.split(',') if ext.strip()
+    }
+else:
+    app.config['ALLOWED_UPLOAD_EXTENSIONS'] = default_extensions
 
 # 3. 데이터베이스 모델 정의
 class User(db.Model):
@@ -58,7 +65,7 @@ def embed_fingerprint(image_path, text_to_embed):
     data_bits = ''.join(f'{byte:08b}' for byte in data_bytes)
 
     try:
-        img = Image.open(image_path).convert('RGB')
+        img = PILImage.open(image_path).convert('RGB')
         flat_channels = [channel for pixel in img.getdata() for channel in pixel]
 
         prefix_bits = salt_bits + length_bits
@@ -102,7 +109,7 @@ def extract_fingerprint(image_path):
     length_bit_length = 16
 
     try:
-        img = Image.open(image_path).convert('RGB')
+        img = PILImage.open(image_path).convert('RGB')
         flat_channels = [channel for pixel in img.getdata() for channel in pixel]
 
         if len(flat_channels) < salt_bit_length + length_bit_length:
@@ -165,8 +172,8 @@ def resolve_fingerprint_owner(token: str):
     return None, None
 
 def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    allowed = app.config.get('ALLOWED_UPLOAD_EXTENSIONS', default_extensions)
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed
 
 # 5. 라우트 (웹 페이지 로직)
 @app.route('/')
