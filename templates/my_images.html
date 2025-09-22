@@ -8,7 +8,7 @@
     {% for image in images %}
       <div class="col">
         <div class="card h-100">
-          <img src="{{ url_for('uploaded_file', filename=image.filename.split('.')[0] + '_fp.' + image.filename.split('.')[1]) }}" class="card-img-top" alt="{{ image.filename }}">
+          <img src="{{ url_for('uploaded_file', filename=image.filename) }}" class="card-img-top" alt="{{ image.filename }}">
           <div class="card-body">
             <h5 class="card-title">{{ image.filename }}</h5>
             <p class="card-text">
@@ -17,6 +17,9 @@
                 보안 토큰: <strong>{{ image.fingerprint_text[-12:] }}</strong>
               </small>
             </p>
+            <a href="{{ url_for('uploaded_file', filename=image.filename) }}" class="btn btn-outline-primary btn-sm" download>
+              다운로드
+            </a>
           </div>
         </div>
       </div>

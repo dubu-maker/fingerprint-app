@@ -302,13 +302,12 @@ def upload_file():
 
             if fingerprinted_path:
                 fingerprinted_filename = os.path.basename(fingerprinted_path)
-                new_image = Image(filename=original_filename,
+                new_image = Image(filename=fingerprinted_filename,
                                   fingerprint_text=token,
                                   user_id=session['user_id'])
                 db.session.add(new_image)
                 db.session.commit()
-                flash(f"'{original_filename}' 파일에 보안 핑거프린트를 삽입했습니다.")
-                return redirect(url_for('upload_success', filename=fingerprinted_filename))
+                return redirect(url_for('upload_success', filename=fingerprinted_filename, original=original_filename))
             else:
                 flash('핑거프린트 삽입에 실패했습니다.', 'error')
                 return redirect(request.url)
@@ -356,7 +355,8 @@ def verify_fingerprint():
 
 @app.route('/success/<filename>')
 def upload_success(filename):
-    return render_template('result.html', filename=filename)
+    original = request.args.get('original')
+    return render_template('result.html', filename=filename, original_filename=original)
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
