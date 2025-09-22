@@ -16,9 +16,15 @@
     </form>
 
     {% if result %}
-      <div class="alert alert-info text-center">
-        <h4 class="alert-heading">추출된 핑거프린트</h4>
-        <p class="display-6">{{ result }}</p>
+      <div class="alert alert-info">
+        <h4 class="alert-heading text-center">검증 결과</h4>
+        <p class="mb-2 text-break"><strong>보안 토큰:</strong> {{ result.token }}</p>
+        {% if result.owner %}
+          <p class="mb-1"><strong>추정 소유자:</strong> {{ result.owner }}</p>
+          <p class="mb-0"><strong>발급 시각:</strong> {{ result.issued_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+        {% else %}
+          <p class="mb-0">등록된 사용자와 일치하는 정보가 없습니다.</p>
+        {% endif %}
       </div>
     {% endif %}
   </div>

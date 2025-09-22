@@ -1,8 +1,13 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
+import base64
+import hmac
+import hashlib
 import os
+import random
 import re
+import secrets
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from itsdangerous import URLSafeTimedSerializer
@@ -11,6 +16,7 @@ from PIL import Image
 # 1. 애플리케이션 및 기본 설정
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'a_very_secret_key_for_local_dev')
+app.config['FINGERPRINT_SECRET'] = os.environ.get('FINGERPRINT_SECRET', 'local_fingerprint_secret')
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -43,60 +49,120 @@ class Image(db.Model):
 
 # 4. 헬퍼 함수
 def embed_fingerprint(image_path, text_to_embed):
+    secret = app.config['FINGERPRINT_SECRET'].encode('utf-8')
+    salt = secrets.token_bytes(16)
+    salt_bits = ''.join(f'{byte:08b}' for byte in salt)
+
+    data_bytes = text_to_embed.encode('utf-8')
+    length_bits = f'{len(data_bytes):016b}'
+    data_bits = ''.join(f'{byte:08b}' for byte in data_bytes)
+
     try:
         img = Image.open(image_path).convert('RGB')
-        width, height = img.size
-        binary_text = ''.join(format(ord(char), '08b') for char in text_to_embed) + '11111111'
-        
-        if len(binary_text) > width * height * 3:
+        flat_channels = [channel for pixel in img.getdata() for channel in pixel]
+
+        prefix_bits = salt_bits + length_bits
+        total_bits = len(prefix_bits) + len(data_bits)
+
+        if total_bits > len(flat_channels):
             raise ValueError("이미지가 너무 작습니다.")
 
-        data_index = 0
-        pixels = img.load()
-        for y in range(height):
-            for x in range(width):
-                pixel = list(pixels[x, y])
-                for i in range(3):
-                    if data_index < len(binary_text):
-                        pixel[i] = pixel[i] & ~1 | int(binary_text[data_index])
-                        data_index += 1
-                pixels[x, y] = tuple(pixel)
-                if data_index >= len(binary_text):
-                    base, ext = os.path.splitext(image_path)
-                    output_path = f"{base}_fp{ext}"
-                    img.save(output_path)
-                    return output_path
-        return None
+        # Embed salt + length sequentially for deterministic extraction
+        for index, bit in enumerate(prefix_bits):
+            flat_channels[index] = (flat_channels[index] & ~1) | int(bit)
+
+        # Scatter actual payload bits using keyed PRNG for resilience
+        seed_material = hmac.new(secret, salt, hashlib.sha256).digest()
+        seed = int.from_bytes(seed_material[:8], 'big')
+        rng = random.Random(seed)
+
+        available_indexes = list(range(len(prefix_bits), len(flat_channels)))
+        rng.shuffle(available_indexes)
+        target_indexes = available_indexes[:len(data_bits)]
+
+        for bit, idx in zip(data_bits, target_indexes):
+            flat_channels[idx] = (flat_channels[idx] & ~1) | int(bit)
+
+        # Reconstruct image
+        reconstructed = [tuple(flat_channels[i:i+3]) for i in range(0, len(flat_channels), 3)]
+        img.putdata(reconstructed)
+
+        base, ext = os.path.splitext(image_path)
+        output_path = f"{base}_fp{ext}"
+        img.save(output_path)
+        return output_path
     except Exception as e:
         print(f"Error embedding: {e}")
         return None
 
+
 def extract_fingerprint(image_path):
+    secret = app.config['FINGERPRINT_SECRET'].encode('utf-8')
+    salt_bit_length = 16 * 8
+    length_bit_length = 16
+
     try:
         img = Image.open(image_path).convert('RGB')
-        pixels = img.load()
-        binary_text = ""
-        limit = 2000 
-        
-        for y in range(img.height):
-            for x in range(img.width):
-                pixel = pixels[x, y]
-                for i in range(3):
-                    binary_text += str(pixel[i] & 1)
-                    if len(binary_text) >= limit: break
-                if len(binary_text) >= limit: break
-            if len(binary_text) >= limit: break
-        
-        all_bytes = [binary_text[i: i+8] for i in range(0, len(binary_text), 8)]
-        decoded_text = ""
-        for byte in all_bytes:
-            if byte == '11111111':
-                return decoded_text
-            decoded_text += chr(int(byte, 2))
-        return "종료 신호를 찾을 수 없거나 데이터가 없습니다."
+        flat_channels = [channel for pixel in img.getdata() for channel in pixel]
+
+        if len(flat_channels) < salt_bit_length + length_bit_length:
+            return None
+
+        salt_bits = ''.join(str(flat_channels[i] & 1) for i in range(salt_bit_length))
+        salt_bytes = bytes(int(salt_bits[i:i+8], 2) for i in range(0, len(salt_bits), 8))
+
+        length_bits = ''.join(str(flat_channels[salt_bit_length + i] & 1) for i in range(length_bit_length))
+        payload_length = int(length_bits, 2)
+
+        if payload_length <= 0:
+            return None
+
+        total_bits_needed = payload_length * 8
+
+        seed_material = hmac.new(secret, salt_bytes, hashlib.sha256).digest()
+        seed = int.from_bytes(seed_material[:8], 'big')
+        rng = random.Random(seed)
+
+        available_indexes = list(range(salt_bit_length + length_bit_length, len(flat_channels)))
+        rng.shuffle(available_indexes)
+        target_indexes = available_indexes[:total_bits_needed]
+
+        data_bits = ''.join(str(flat_channels[idx] & 1) for idx in target_indexes)
+        data_bytes = bytes(int(data_bits[i:i+8], 2) for i in range(0, len(data_bits), 8))
+        return data_bytes.decode('utf-8')
     except Exception as e:
         print(f"Error extracting: {e}")
-        return "추출 중 오류 발생"
+        return None
+
+
+def generate_fingerprint_token(username: str) -> str:
+    secret = app.config['FINGERPRINT_SECRET'].encode('utf-8')
+    nonce = secrets.token_bytes(8)
+    timestamp = int(datetime.utcnow().timestamp())
+    timestamp_bytes = timestamp.to_bytes(8, 'big')
+    signature = hmac.new(secret, nonce + timestamp_bytes + username.encode('utf-8'), hashlib.sha256).digest()
+    payload = nonce + timestamp_bytes + signature
+    return base64.urlsafe_b64encode(payload).decode('utf-8')
+
+
+def resolve_fingerprint_owner(token: str):
+    secret = app.config['FINGERPRINT_SECRET'].encode('utf-8')
+    try:
+        raw = base64.urlsafe_b64decode(token.encode('utf-8'))
+        if len(raw) != 48:
+            return None, None
+        nonce = raw[:8]
+        timestamp_bytes = raw[8:16]
+        signature = raw[16:]
+        for user in User.query.all():
+            expected = hmac.new(secret, nonce + timestamp_bytes + user.username.encode('utf-8'), hashlib.sha256).digest()
+            if hmac.compare_digest(signature, expected):
+                timestamp = int.from_bytes(timestamp_bytes, 'big')
+                issued_at = datetime.fromtimestamp(timestamp)
+                return user.username, issued_at
+    except Exception as e:
+        print(f"Error resolving fingerprint: {e}")
+    return None, None
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -223,17 +289,18 @@ def upload_file():
             original_filename = secure_filename(file.filename)
             original_file_path = os.path.join(app.config['UPLOAD_FOLDER'], original_filename)
             file.save(original_file_path)
-            
-            fingerprinted_path = embed_fingerprint(original_file_path, session['username'])
-            
+
+            token = generate_fingerprint_token(session['username'])
+            fingerprinted_path = embed_fingerprint(original_file_path, token)
+
             if fingerprinted_path:
                 fingerprinted_filename = os.path.basename(fingerprinted_path)
-                new_image = Image(filename=original_filename, 
-                                  fingerprint_text=session['username'], 
+                new_image = Image(filename=original_filename,
+                                  fingerprint_text=token,
                                   user_id=session['user_id'])
                 db.session.add(new_image)
                 db.session.commit()
-                flash(f"'{original_filename}' 파일에 핑거프린트를 삽입했습니다.")
+                flash(f"'{original_filename}' 파일에 보안 핑거프린트를 삽입했습니다.")
                 return redirect(url_for('upload_success', filename=fingerprinted_filename))
             else:
                 flash('핑거프린트 삽입에 실패했습니다.', 'error')
@@ -265,10 +332,20 @@ def verify_fingerprint():
             filename = secure_filename(file.filename)
             temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{filename}")
             file.save(temp_path)
-            result = extract_fingerprint(temp_path)
+            token = extract_fingerprint(temp_path)
             os.remove(temp_path)
-            return render_template('verify.html', result=result)
-    return render_template('verify.html')
+            if not token:
+                flash('숨겨진 데이터가 감지되지 않았습니다.', 'error')
+                return redirect(request.url)
+
+            owner, issued_at = resolve_fingerprint_owner(token)
+            verification = {
+                'token': token,
+                'owner': owner,
+                'issued_at': issued_at
+            }
+            return render_template('verify.html', result=verification)
+    return render_template('verify.html', result=None)
 
 @app.route('/success/<filename>')
 def upload_success(filename):
