@@ -106,14 +106,13 @@ def allowed_file(filename):
 @app.route('/')
 def home():
     video_token = None
-    if 'plan' in session:
-        video_file = 'video_1080p.mp4' if session['plan'] == 'premium' else 'video_720p.mp4'
-        video_token = s.dumps(video_file)
+    if session.get('user_id') and session.get('role') != 'admin':
+        video_token = s.dumps('print.mp4')
 
     if session.get('role') == 'admin':
         user_count = User.query.count()
         recent_users = User.query.order_by(User.id.desc()).limit(5).all()
-        return render_template('home.html', user_count=user_count, recent_users=recent_users)
+        return render_template('home.html', user_count=user_count, recent_users=recent_users, video_token=video_token)
     
     return render_template('home.html', video_token=video_token)
 
@@ -285,13 +284,13 @@ def serve_video(token):
         return "Access Denied", 403
     try:
         filename = s.loads(token, max_age=30)
-    except:
+    except Exception:
         return "Invalid or expired link.", 403
-    if (session.get('plan') == 'premium' and filename == 'video_1080p.mp4') or \
-       (session.get('plan') != 'premium' and filename == 'video_720p.mp4'):
-        return send_from_directory(os.path.join(app.config['STATIC_FOLDER'], 'videos'), filename)
-    else:
-        return "Access Denied based on your plan.", 403
+
+    if filename != 'print.mp4':
+        return "Access Denied", 403
+
+    return send_from_directory(os.path.join(app.config['STATIC_FOLDER'], 'videos'), filename)
 
 # 6. 애플리케이션 실행
 if __name__ == '__main__':
