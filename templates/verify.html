@@ -16,6 +16,7 @@
     </div>
     
     <form method="post" enctype="multipart/form-data" class="mb-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="input-group">
         <input type="file" name="file" class="form-control" required>
         <button type="submit" class="btn btn-success">

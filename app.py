@@ -12,6 +12,11 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from itsdangerous import URLSafeTimedSerializer
 from PIL import Image as PILImage
+from flask_wtf import CSRFProtect
+from flask_wtf.csrf import CSRFError
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_limiter.exceptions import RateLimitExceeded
 
 # 1. 애플리케이션 및 기본 설정
 app = Flask(__name__)
@@ -22,13 +27,35 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['WTF_CSRF_TIME_LIMIT'] = int(os.environ.get('WTF_CSRF_TIME_LIMIT', 3600))
+app.config['WTF_CSRF_CHECK_DEFAULT'] = True
+app.config['WTF_CSRF_ENABLED'] = True
+
+if os.environ.get('ENABLE_SECURE_COOKIES', '1') == '1':
+    app.config.update(
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE=os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax'),
+        REMEMBER_COOKIE_SECURE=True,
+        REMEMBER_COOKIE_HTTPONLY=True,
+        REMEMBER_COOKIE_SAMESITE=os.environ.get('REMEMBER_COOKIE_SAMESITE', 'Lax')
+    )
 db = SQLAlchemy(app)
 s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+csrf = CSRFProtect(app)
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    storage_uri=os.environ.get('RATELIMIT_STORAGE_URI', 'memory://'),
+    default_limits=[]
+)
 
 # 2. 파일 시스템 설정
-UPLOAD_FOLDER = 'uploads'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['STATIC_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+app.config['STATIC_FOLDER'] = os.path.join(BASE_DIR, 'static')
 default_extensions = {'png', 'jpg', 'jpeg', 'gif'}
 configured_extensions = os.environ.get('ALLOWED_UPLOAD_EXTENSIONS')
 if configured_extensions:
@@ -171,6 +198,22 @@ def resolve_fingerprint_owner(token: str):
         print(f"Error resolving fingerprint: {e}")
     return None, None
 
+@app.errorhandler(CSRFError)
+def handle_csrf_error(error):
+    flash('보안 검증이 만료되었거나 잘못되었습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.', 'error')
+    return redirect(request.referrer or url_for('home')), 400
+
+@app.errorhandler(RateLimitExceeded)
+def handle_rate_limit(error):
+    flash('요청이 너무 자주 발생했습니다. 잠시 후 다시 시도해 주세요.', 'error')
+    target = request.referrer
+    if not target:
+        if request.endpoint in {'upload_file', 'verify_fingerprint'}:
+            target = url_for(request.endpoint)
+        else:
+            target = url_for('home')
+    return redirect(target), 429
+
 def allowed_file(filename):
     allowed = app.config.get('ALLOWED_UPLOAD_EXTENSIONS', default_extensions)
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed
@@ -280,6 +323,7 @@ def update_plan(user_id):
     return redirect(url_for('show_users'))
 
 @app.route('/upload', methods=['GET', 'POST'])
+@limiter.limit("5 per minute", methods=['POST'], per_method=True, error_message='업로드 요청은 분당 5회로 제한됩니다.')
 def upload_file():
     if 'username' not in session:
         flash('이미지를 업로드하려면 먼저 로그인하세요.', 'error')
@@ -325,6 +369,7 @@ def my_images():
     return render_template('my_images.html', images=user.images)
 
 @app.route('/verify', methods=['GET', 'POST'])
+@limiter.limit("10 per minute", methods=['POST'], per_method=True, error_message='검증 요청은 분당 10회로 제한됩니다.')
 def verify_fingerprint():
     if request.method == 'POST':
         if 'file' not in request.files:

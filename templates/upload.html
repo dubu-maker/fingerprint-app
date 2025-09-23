@@ -12,6 +12,7 @@
         </p>
         
         <form method="post" enctype="multipart/form-data" class="mt-4">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="input-group">
             <input type="file" class="form-control" name="file" required>
             <button type="submit" class="btn btn-primary">
