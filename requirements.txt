@@ -10,6 +10,5 @@ Pillow
 psycopg2-binary
 SQLAlchemy
 Werkzeug
-Flask-Limiter
 Flask-WTF
 Flask-Limiter>=2.8.0

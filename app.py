@@ -16,7 +16,10 @@ from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from flask_limiter.exceptions import RateLimitExceeded
+try:
+    from flask_limiter.errors import RateLimitExceeded
+except ImportError:
+    from limits.errors import RateLimitExceeded
 
 # 1. 애플리케이션 및 기본 설정
 app = Flask(__name__)
