@@ -20,6 +20,7 @@ try:
     from flask_limiter.errors import RateLimitExceeded
 except ImportError:
     from limits.errors import RateLimitExceeded
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # 1. 애플리케이션 및 기본 설정
 app = Flask(__name__)
@@ -33,6 +34,8 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['WTF_CSRF_TIME_LIMIT'] = int(os.environ.get('WTF_CSRF_TIME_LIMIT', 3600))
 app.config['WTF_CSRF_CHECK_DEFAULT'] = True
 app.config['WTF_CSRF_ENABLED'] = True
+app.config['PREFERRED_URL_SCHEME'] = 'https'
+force_https = os.environ.get('FORCE_HTTPS', '1') == '1'
 
 if os.environ.get('ENABLE_SECURE_COOKIES', '1') == '1':
     app.config.update(
@@ -52,6 +55,7 @@ limiter = Limiter(
     storage_uri=os.environ.get('RATELIMIT_STORAGE_URI', 'memory://'),
     default_limits=[]
 )
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
 # 2. 파일 시스템 설정
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -216,6 +220,15 @@ def handle_rate_limit(error):
         else:
             target = url_for('home')
     return redirect(target), 429
+
+if force_https:
+    @app.before_request
+    def enforce_https():
+        forwarded_proto = request.headers.get('X-Forwarded-Proto', 'http')
+        if request.is_secure or forwarded_proto == 'https':
+            return None
+        url = request.url.replace('http://', 'https://', 1)
+        return redirect(url, code=301)
 
 def allowed_file(filename):
     allowed = app.config.get('ALLOWED_UPLOAD_EXTENSIONS', default_extensions)
