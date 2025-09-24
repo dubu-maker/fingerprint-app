@@ -72,6 +72,9 @@ if configured_extensions:
 else:
     app.config['ALLOWED_UPLOAD_EXTENSIONS'] = default_extensions
 
+# --- 권한 및 로깅 설정 ---
+OWNER_DETAIL_ROLES = {'admin', 'owner'}
+
 # 3. 데이터베이스 모델 정의
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -87,6 +90,19 @@ class Image(db.Model):
     fingerprint_text = db.Column(db.String(100), nullable=False)
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+
+class VerificationLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    username = db.Column(db.String(80), nullable=True)
+    client_ip = db.Column(db.String(45), nullable=True)
+    filename = db.Column(db.String(120), nullable=True)
+    token = db.Column(db.String(255), nullable=True)
+    matched_owner = db.Column(db.String(80), nullable=True)
+    owner_details_disclosed = db.Column(db.Boolean, default=False, nullable=False)
+    matched = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 # 4. 헬퍼 함수
 def embed_fingerprint(image_path, text_to_embed):
@@ -220,6 +236,14 @@ def handle_rate_limit(error):
         else:
             target = url_for('home')
     return redirect(target), 429
+
+
+def get_client_ip():
+    forwarded_for = request.headers.get('X-Forwarded-For')
+    if forwarded_for:
+        return forwarded_for.split(',')[0].strip()
+    return request.remote_addr
+
 
 if force_https:
     @app.before_request
@@ -387,6 +411,10 @@ def my_images():
 @app.route('/verify', methods=['GET', 'POST'])
 @limiter.limit("10 per minute", methods=['POST'], per_method=True, error_message='검증 요청은 분당 10회로 제한됩니다.')
 def verify_fingerprint():
+    if 'user_id' not in session:
+        flash('소유권 확인을 사용하려면 먼저 로그인하세요.', 'error')
+        return redirect(url_for('login'))
+
     if request.method == 'POST':
         if 'file' not in request.files:
             flash('파일이 없습니다.', 'error')
@@ -402,14 +430,42 @@ def verify_fingerprint():
             token = extract_fingerprint(temp_path)
             os.remove(temp_path)
             if not token:
+                db.session.add(VerificationLog(
+                    user_id=session.get('user_id'),
+                    username=session.get('username'),
+                    client_ip=get_client_ip(),
+                    filename=filename,
+                    token=None,
+                    matched_owner=None,
+                    owner_details_disclosed=False,
+                    matched=False
+                ))
+                db.session.commit()
                 flash('숨겨진 데이터가 감지되지 않았습니다.', 'error')
                 return redirect(request.url)
 
             owner, issued_at = resolve_fingerprint_owner(token)
+            allow_owner_details = session.get('role') in OWNER_DETAIL_ROLES
+            matched = owner is not None
+
+            db.session.add(VerificationLog(
+                user_id=session.get('user_id'),
+                username=session.get('username'),
+                client_ip=get_client_ip(),
+                filename=filename,
+                token=token,
+                matched_owner=owner,
+                owner_details_disclosed=bool(allow_owner_details and matched),
+                matched=matched
+            ))
+            db.session.commit()
+
             verification = {
                 'token': token,
-                'owner': owner,
-                'issued_at': issued_at
+                'matched': matched,
+                'owner': owner if allow_owner_details and matched else None,
+                'issued_at': issued_at if allow_owner_details and issued_at else None,
+                'owner_visible': bool(allow_owner_details and matched)
             }
             return render_template('verify.html', result=verification)
     return render_template('verify.html', result=None)
