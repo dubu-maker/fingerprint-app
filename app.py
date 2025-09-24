@@ -456,7 +456,8 @@ def allowed_file(filename):
 def inject_media_extensions():
     return {
         'IMAGE_EXTENSIONS': IMAGE_EXTENSIONS,
-        'VIDEO_EXTENSIONS': VIDEO_EXTENSIONS
+        'VIDEO_EXTENSIONS': VIDEO_EXTENSIONS,
+        'datetime': datetime
     }
 
 # 5. 라우트 (웹 페이지 로직)

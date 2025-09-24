@@ -12,16 +12,20 @@
       <div class="card-body">
         <h5 class="card-title mb-3">결과 미디어</h5>
         {% set ext = filename.rsplit('.', 1)[-1]|lower %}
-        {% if ext in IMAGE_EXTENSIONS %}
-          <img src="{{ url_for('uploaded_file', filename=filename) }}" class="img-fluid rounded-3" alt="Watermarked Image">
-        {% elif ext in VIDEO_EXTENSIONS %}
-          <video class="w-100 rounded-3" controls preload="metadata">
-            <source src="{{ url_for('uploaded_file', filename=filename) }}" type="video/{{ ext }}">
-            브라우저가 비디오 태그를 지원하지 않습니다.
-          </video>
-          <p class="small text-muted mt-2">동영상에서 오디오는 유지되지 않을 수 있습니다.</p>
-        {% else %}
-          <div class="alert alert-warning mb-0">해당 파일 형식은 미리보기를 지원하지 않습니다.</div>
+        <div class="media-preview mb-3">
+          {% if ext in IMAGE_EXTENSIONS %}
+            <img src="{{ url_for('uploaded_file', filename=filename) }}" alt="Watermarked Media">
+          {% elif ext in VIDEO_EXTENSIONS %}
+            <video controls preload="metadata">
+              <source src="{{ url_for('uploaded_file', filename=filename) }}" type="video/{{ ext }}">
+              브라우저가 비디오 태그를 지원하지 않습니다.
+            </video>
+          {% else %}
+            <div class="p-5 text-center text-muted">해당 형식은 미리보기를 지원하지 않습니다.</div>
+          {% endif %}
+        </div>
+        {% if ext in VIDEO_EXTENSIONS %}
+          <p class="small text-muted">동영상 처리 과정에서 오디오는 제거될 수 있습니다.</p>
         {% endif %}
         <div class="mt-3">
           <a href="{{ url_for('uploaded_file', filename=filename) }}" class="btn btn-primary" download>

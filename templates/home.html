@@ -5,28 +5,27 @@
     {# --- 로그인 상태 --- #}
     {% if session.role == 'admin' %}
       {# === 관리자용 대시보드 === #}
-      <h1 class="display-5 fw-bold mb-4">관리자 대시보드</h1>
-      <div class="row">
-        <div class="col-md-4">
-          <div class="card text-white bg-primary mb-3">
-            <div class="card-header">총 사용자 수</div>
-            <div class="card-body">
-              <h5 class="card-title display-4">{{ user_count }} 명</h5>
-            </div>
+      <h1 class="section-title mb-4">관리자 대시보드</h1>
+      <div class="row g-4">
+        <div class="col-lg-4">
+          <div class="card h-100 text-center p-4">
+            <div class="text-accent fw-semibold mb-2">총 사용자 수</div>
+            <div class="display-5 fw-bold">{{ user_count }} 명</div>
+            <p class="small text-muted mt-2">지금까지 이 실험실을 거쳐 간 창작자 수입니다.</p>
           </div>
         </div>
-        <div class="col-md-8">
-          <div class="card">
+        <div class="col-lg-8">
+          <div class="card h-100">
             <div class="card-header">최근 가입 사용자 (최대 5명)</div>
             <div class="card-body">
               <ul class="list-group list-group-flush">
                 {% for user in recent_users %}
                   <li class="list-group-item d-flex justify-content-between align-items-center">
-                    {{ user.username }} ({{ user.role }})
-                    <span class="badge bg-secondary rounded-pill">{{ user.plan }}</span>
+                    <span>{{ user.username }} <small class="text-muted">({{ user.role }})</small></span>
+                    <span class="badge bg-secondary rounded-pill text-uppercase">{{ user.plan }}</span>
                   </li>
                 {% else %}
-                  <li class="list-group-item">아직 가입한 사용자가 없습니다.</li>
+                  <li class="list-group-item text-center text-muted">아직 가입한 사용자가 없습니다.</li>
                 {% endfor %}
               </ul>
               <a href="{{ url_for('show_users') }}" class="btn btn-outline-primary mt-3">전체 사용자 목록 보기</a>
@@ -37,36 +36,32 @@
 
     {% else %}
       {# === 일반 사용자용 메인 화면 (print.mp4 플레이어) === #}
-      <div class="p-5 mb-4 bg-light rounded-3 text-center">
-        <div class="container-fluid py-5">
-          <div class="ratio ratio-16x9 mb-4">
-            <video class="rounded-3" controls autoplay muted loop>
-              <source src="{{ url_for('serve_video', token=video_token) }}" type="video/mp4">
-              브라우저가 비디오 태그를 지원하지 않습니다.
-            </video>
-          </div>
+      <div class="text-center">
+        <div class="media-preview ratio ratio-16x9 mb-4">
+          <video class="rounded-3" controls autoplay muted loop>
+            <source src="{{ url_for('serve_video', token=video_token) }}" type="video/mp4">
+            브라우저가 비디오 태그를 지원하지 않습니다.
+          </video>
+        </div>
 
-          <h1 class="display-5 fw-bold">{{ session.username }}님, 환영합니다!</h1>
-          <p class="fs-4">
-            등급: <strong>{{ session.plan }}</strong>
-          </p>
-          <a class="btn btn-primary btn-lg mt-3" href="{{ url_for('upload_file') }}">이미지 업로드하기</a>
+        <h1 class="hero-heading">{{ session.username }}님, 환영합니다</h1>
+        <p class="hero-subtitle">현재 등급 <span class="text-accent fw-semibold">{{ session.plan }}</span> · 워터마크 처리된 미디어에서 당신의 신원을 안전하게 확인합니다.</p>
+        <div class="hero-action">
+          <a class="btn btn-primary btn-lg" href="{{ url_for('upload_file') }}">새 워터마크 생성하기</a>
         </div>
       </div>
     {% endif %}
 
   {% else %}
-    {# --- 로그아웃 상태 (배너 이미지 표시) --- #}
-    <div class="p-5 mb-4 bg-light rounded-3 text-center">
-      <div class="container-fluid py-5">
-        <h1 class="display-5 fw-bold">디지털 신원 설계 연구소에 오신 것을 환영합니다!</h1>
-        <p class="col-lg-8 mx-auto fs-4">
-          여기는 미디어의 픽셀 하나하나에 당신만의 보이지 않는 흔적을 섬세하게 녹여내는 디지털 아틀리에입니다 <br>
-          원본의 아름다움은 그대로 보존하면서, 세상에 단 하나뿐인 당신의 서명을 담아보세요. <br>
-          지금 로그인하고, 창작의 여정에 안전한 이정표를 더하세요.
-        </p>
+    <div class="text-center">
+      <div class="hero-heading mb-3">세상에 단 하나뿐인 당신의 서명</div>
+      <p class="hero-subtitle">
+        디지털 신원 설계 연구소에 오신 것을 환영합니다. 이곳은 미디어의 픽셀 하나하나에 당신만의 흔적을 섬세하게 확산시키는 아틀리에입니다.<br>
+        원본의 아름다움은 보존하고, 안전한 서명만을 남겨 창작물을 지켜보세요.
+      </p>
+      <div class="hero-action d-flex justify-content-center gap-3 flex-wrap">
         <a class="btn btn-primary btn-lg" href="{{ url_for('login') }}">로그인</a>
-        <a class="btn btn-secondary btn-lg" href="{{ url_for('register') }}">회원가입</a>
+        <a class="btn btn-outline-primary btn-lg" href="{{ url_for('register') }}">회원가입</a>
       </div>
     </div>
   {% endif %}
