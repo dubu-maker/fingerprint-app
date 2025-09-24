@@ -3,6 +3,7 @@
 ## Environment Variables
 - `SECRET_KEY`: Flask session signing key. Set to a strong random value in production.
 - `FINGERPRINT_SECRET`: Secret used to sign watermark tokens. Must match across all app instances.
+- `DATABASE_URL`: SQLAlchemy connection string. If omitted, the app falls back to `sqlite:///database.db` inside the project directory.
 - `ALLOWED_UPLOAD_EXTENSIONS`: Optional comma-separated list of file extensions (e.g. `png,jpg,mp4`). Defaults to `png,jpg,jpeg,gif,bmp,tiff,webp,mp4,mov,avi,mkv,webm` when unset.
 - `ENABLE_SECURE_COOKIES`: Set to `1` (default) to send cookies with the `Secure` flag; set to `0` for local HTTP testing.
 - `FORCE_HTTPS`: Redirects all traffic to HTTPS when `1` (default). Disable by setting to `0` in local development.

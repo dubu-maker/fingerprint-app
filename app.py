@@ -25,6 +25,9 @@ except ImportError:
     from limits.errors import RateLimitExceeded
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_SQLITE_PATH = os.environ.get('DEFAULT_SQLITE_PATH', os.path.join(BASE_DIR, 'database.db'))
+
 # 1. 애플리케이션 및 기본 설정
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'a_very_secret_key_for_local_dev')
@@ -32,6 +35,12 @@ app.config['FINGERPRINT_SECRET'] = os.environ.get('FINGERPRINT_SECRET', 'local_f
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+if not DATABASE_URL:
+    sqlite_path = Path(DEFAULT_SQLITE_PATH)
+    sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    DATABASE_URL = f"sqlite:///{sqlite_path}"
+
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['WTF_CSRF_TIME_LIMIT'] = int(os.environ.get('WTF_CSRF_TIME_LIMIT', 3600))
@@ -61,7 +70,6 @@ limiter = Limiter(
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
 # 2. 파일 시스템 설정
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
