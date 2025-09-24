@@ -51,6 +51,27 @@ body {
     backdrop-filter: blur(10px);
 }
 
+.card,
+.list-group-item,
+.alert,
+.modal-content {
+    background-color: rgba(15, 23, 42, 0.72);
+}
+
+.card-body p,
+.card-body li,
+.card-text,
+.list-group-item,
+.form-text,
+.text-muted {
+    color: #dbeafe !important;
+}
+
+.form-label,
+label {
+    color: #f1f5f9;
+}
+
 .hero-heading {
     font-size: clamp(2.8rem, 4vw, 3.8rem);
     font-weight: 800;
