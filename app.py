@@ -8,10 +8,13 @@ import os
 import random
 import re
 import secrets
+from pathlib import Path
+
+import cv2
+import numpy as np
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from itsdangerous import URLSafeTimedSerializer
-from PIL import Image as PILImage
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError
 from flask_limiter import Limiter
@@ -63,14 +66,18 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['STATIC_FOLDER'] = os.path.join(BASE_DIR, 'static')
-default_extensions = {'png', 'jpg', 'jpeg', 'gif'}
+
+IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'webp'}
+VIDEO_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv', 'webm'}
+DEFAULT_EXTENSIONS = IMAGE_EXTENSIONS.union(VIDEO_EXTENSIONS)
+
 configured_extensions = os.environ.get('ALLOWED_UPLOAD_EXTENSIONS')
 if configured_extensions:
     app.config['ALLOWED_UPLOAD_EXTENSIONS'] = {
         ext.strip().lower() for ext in configured_extensions.split(',') if ext.strip()
     }
 else:
-    app.config['ALLOWED_UPLOAD_EXTENSIONS'] = default_extensions
+    app.config['ALLOWED_UPLOAD_EXTENSIONS'] = DEFAULT_EXTENSIONS
 
 # --- 권한 및 로깅 설정 ---
 OWNER_DETAIL_ROLES = {'admin', 'owner'}
@@ -105,92 +112,271 @@ class VerificationLog(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 # 4. 헬퍼 함수
-def embed_fingerprint(image_path, text_to_embed):
-    secret = app.config['FINGERPRINT_SECRET'].encode('utf-8')
-    salt = secrets.token_bytes(16)
-    salt_bits = ''.join(f'{byte:08b}' for byte in salt)
+PREFIX_SALT_BYTES = 16
+PREFIX_LENGTH_BITS = 16
+PREFIX_TOTAL_BITS = PREFIX_SALT_BYTES * 8 + PREFIX_LENGTH_BITS
+EMBED_DELTA = float(os.environ.get('WATERMARK_DCT_DELTA', 6.0))
 
-    data_bytes = text_to_embed.encode('utf-8')
-    length_bits = f'{len(data_bytes):016b}'
-    data_bits = ''.join(f'{byte:08b}' for byte in data_bytes)
 
-    try:
-        img = PILImage.open(image_path).convert('RGB')
-        flat_channels = [channel for pixel in img.getdata() for channel in pixel]
+def _bitstring_from_bytes(data: bytes) -> list[int]:
+    return [int(bit) for bit in ''.join(f'{byte:08b}' for byte in data)]
 
-        prefix_bits = salt_bits + length_bits
-        total_bits = len(prefix_bits) + len(data_bits)
 
-        if total_bits > len(flat_channels):
-            raise ValueError("이미지가 너무 작습니다.")
+def _bytes_from_bits(bits: list[int]) -> bytes:
+    return bytes(
+        int(''.join(str(bit) for bit in bits[i:i + 8]), 2)
+        for i in range(0, len(bits), 8)
+    )
 
-        # Embed salt + length sequentially for deterministic extraction
-        for index, bit in enumerate(prefix_bits):
-            flat_channels[index] = (flat_channels[index] & ~1) | int(bit)
 
-        # Scatter actual payload bits using keyed PRNG for resilience
-        seed_material = hmac.new(secret, salt, hashlib.sha256).digest()
-        seed = int.from_bytes(seed_material[:8], 'big')
-        rng = random.Random(seed)
+def _get_block_coordinates(height: int, width: int):
+    h_aligned = height - (height % 8)
+    w_aligned = width - (width % 8)
+    coords = [(y, x) for y in range(0, h_aligned, 8) for x in range(0, w_aligned, 8)]
+    return coords, h_aligned, w_aligned
 
-        available_indexes = list(range(len(prefix_bits), len(flat_channels)))
-        rng.shuffle(available_indexes)
-        target_indexes = available_indexes[:len(data_bits)]
 
-        for bit, idx in zip(data_bits, target_indexes):
-            flat_channels[idx] = (flat_channels[idx] & ~1) | int(bit)
+def _embed_bit_in_block(block: np.ndarray, bit: int) -> np.ndarray:
+    dct = cv2.dct(block)
+    c_a = dct[2, 3]
+    c_b = dct[3, 2]
+    if bit == 1:
+        if c_a <= c_b + EMBED_DELTA:
+            c_a = c_b + EMBED_DELTA
+    else:
+        if c_b <= c_a + EMBED_DELTA:
+            c_b = c_a + EMBED_DELTA
+    dct[2, 3] = c_a
+    dct[3, 2] = c_b
+    block_mod = cv2.idct(dct)
+    return np.clip(block_mod, 0, 255)
 
-        # Reconstruct image
-        reconstructed = [tuple(flat_channels[i:i+3]) for i in range(0, len(flat_channels), 3)]
-        img.putdata(reconstructed)
 
-        base, ext = os.path.splitext(image_path)
-        output_path = f"{base}_fp{ext}"
-        img.save(output_path)
-        return output_path
-    except Exception as e:
-        print(f"Error embedding: {e}")
+def _extract_bit_from_block(block: np.ndarray) -> int:
+    dct = cv2.dct(block)
+    return 1 if dct[2, 3] > dct[3, 2] else 0
+
+
+def _apply_bit_map_to_plane(plane: np.ndarray, coords, bit_map: dict[int, int]) -> np.ndarray:
+    if not bit_map:
+        return plane
+    region = plane.astype(np.float32)
+    applied = 0
+    for idx, (y, x) in enumerate(coords):
+        bit = bit_map.get(idx)
+        if bit is None:
+            continue
+        block = region[y:y + 8, x:x + 8]
+        region[y:y + 8, x:x + 8] = _embed_bit_in_block(block, bit)
+        applied += 1
+    if applied != len(bit_map):
+        raise ValueError('워터마크를 삽입하기 위한 공간이 부족합니다.')
+    return np.clip(region, 0, 255).astype(np.uint8)
+
+
+def _build_bit_map(total_blocks: int, payload: bytes, secret: bytes):
+    salt = secrets.token_bytes(PREFIX_SALT_BYTES)
+    prefix_bits = _bitstring_from_bytes(salt) + [int(bit) for bit in f'{len(payload):016b}']
+    data_bits = _bitstring_from_bytes(payload)
+    total_bits = len(prefix_bits) + len(data_bits)
+    if total_bits > total_blocks:
+        raise ValueError('미디어가 핑거프린트를 담기에 충분히 크지 않습니다.')
+    bit_map = {idx: bit for idx, bit in enumerate(prefix_bits)}
+    available_indices = list(range(len(prefix_bits), total_blocks))
+    rng_seed = int.from_bytes(hmac.new(secret, salt, hashlib.sha256).digest()[:8], 'big')
+    rng = random.Random(rng_seed)
+    rng.shuffle(available_indices)
+    data_indices = available_indices[:len(data_bits)]
+    for idx, bit in zip(data_indices, data_bits):
+        bit_map[idx] = bit
+    return bit_map, salt, len(payload)
+
+
+def _decode_prefix(prefix_bits: list[int]):
+    if len(prefix_bits) < PREFIX_TOTAL_BITS:
+        return None, None
+    salt_bits = prefix_bits[:PREFIX_SALT_BYTES * 8]
+    length_bits = prefix_bits[PREFIX_SALT_BYTES * 8:PREFIX_TOTAL_BITS]
+    salt_bytes = _bytes_from_bits(salt_bits)
+    payload_length = int(''.join(str(bit) for bit in length_bits), 2)
+    return salt_bytes, payload_length
+
+
+def _decode_payload(prefix_bits: list[int], extra_bits: dict[int, int], total_blocks: int, secret: bytes):
+    salt_bytes, payload_length = _decode_prefix(prefix_bits)
+    if salt_bytes is None or payload_length is None:
         return None
-
-
-def extract_fingerprint(image_path):
-    secret = app.config['FINGERPRINT_SECRET'].encode('utf-8')
-    salt_bit_length = 16 * 8
-    length_bit_length = 16
-
+    data_bits_needed = payload_length * 8
+    if data_bits_needed == 0:
+        return ''
+    available_indices = list(range(PREFIX_TOTAL_BITS, total_blocks))
+    if len(available_indices) < data_bits_needed:
+        return None
+    rng_seed = int.from_bytes(hmac.new(secret, salt_bytes, hashlib.sha256).digest()[:8], 'big')
+    rng = random.Random(rng_seed)
+    rng.shuffle(available_indices)
+    data_indices = available_indices[:data_bits_needed]
+    bits = []
+    for idx in data_indices:
+        bit = extra_bits.get(idx)
+        if bit is None:
+            return None
+        bits.append(bit)
+    data_bytes = _bytes_from_bits(bits)
     try:
-        img = PILImage.open(image_path).convert('RGB')
-        flat_channels = [channel for pixel in img.getdata() for channel in pixel]
-
-        if len(flat_channels) < salt_bit_length + length_bit_length:
-            return None
-
-        salt_bits = ''.join(str(flat_channels[i] & 1) for i in range(salt_bit_length))
-        salt_bytes = bytes(int(salt_bits[i:i+8], 2) for i in range(0, len(salt_bits), 8))
-
-        length_bits = ''.join(str(flat_channels[salt_bit_length + i] & 1) for i in range(length_bit_length))
-        payload_length = int(length_bits, 2)
-
-        if payload_length <= 0:
-            return None
-
-        total_bits_needed = payload_length * 8
-
-        seed_material = hmac.new(secret, salt_bytes, hashlib.sha256).digest()
-        seed = int.from_bytes(seed_material[:8], 'big')
-        rng = random.Random(seed)
-
-        available_indexes = list(range(salt_bit_length + length_bit_length, len(flat_channels)))
-        rng.shuffle(available_indexes)
-        target_indexes = available_indexes[:total_bits_needed]
-
-        data_bits = ''.join(str(flat_channels[idx] & 1) for idx in target_indexes)
-        data_bytes = bytes(int(data_bits[i:i+8], 2) for i in range(0, len(data_bits), 8))
         return data_bytes.decode('utf-8')
-    except Exception as e:
-        print(f"Error extracting: {e}")
+    except UnicodeDecodeError:
         return None
 
+
+def embed_fingerprint_image(image_path: str, payload: str, secret: bytes):
+    payload_bytes = payload.encode('utf-8')
+    frame = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    if frame is None:
+        raise ValueError('이미지를 읽을 수 없습니다.')
+    coords, h_aligned, w_aligned = _get_block_coordinates(frame.shape[0], frame.shape[1])
+    total_blocks = len(coords)
+    bit_map, _, _ = _build_bit_map(total_blocks, payload_bytes, secret)
+    ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
+    y, cr, cb = cv2.split(ycrcb)
+    region = y[:h_aligned, :w_aligned]
+    region_modified = _apply_bit_map_to_plane(region, coords, bit_map)
+    y[:h_aligned, :w_aligned] = region_modified
+    processed = cv2.merge([y, cr, cb])
+    result = cv2.cvtColor(processed, cv2.COLOR_YCrCb2BGR)
+    base, ext = os.path.splitext(image_path)
+    output_path = f"{base}_fp{ext}"
+    if not cv2.imwrite(output_path, result):
+        raise ValueError('워터마크된 이미지를 저장할 수 없습니다.')
+    return output_path
+
+
+def extract_fingerprint_image(image_path: str, secret: bytes):
+    frame = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    if frame is None:
+        return None
+    coords, h_aligned, w_aligned = _get_block_coordinates(frame.shape[0], frame.shape[1])
+    if not coords:
+        return None
+    ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
+    y = ycrcb[:, :, 0]
+    plane = y[:h_aligned, :w_aligned].astype(np.float32)
+    prefix_bits = []
+    extra_bits = {}
+    for idx, (y_off, x_off) in enumerate(coords):
+        block = plane[y_off:y_off + 8, x_off:x_off + 8]
+        bit = _extract_bit_from_block(block)
+        if idx < PREFIX_TOTAL_BITS:
+            prefix_bits.append(bit)
+        else:
+            extra_bits[idx] = bit
+    return _decode_payload(prefix_bits, extra_bits, len(coords), secret)
+
+
+def embed_fingerprint_video(video_path: str, payload: str, secret: bytes):
+    payload_bytes = payload.encode('utf-8')
+    capture = cv2.VideoCapture(video_path)
+    if not capture.isOpened():
+        raise ValueError('동영상을 읽을 수 없습니다.')
+    frame_block_counts = []
+    success, frame = capture.read()
+    while success:
+        coords, _, _ = _get_block_coordinates(frame.shape[0], frame.shape[1])
+        frame_block_counts.append(len(coords))
+        success, frame = capture.read()
+    capture.release()
+    total_blocks = sum(frame_block_counts)
+    if total_blocks == 0:
+        raise ValueError('동영상 프레임이 너무 작습니다.')
+    bit_map, _, _ = _build_bit_map(total_blocks, payload_bytes, secret)
+    capture = cv2.VideoCapture(video_path)
+    fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    ext = Path(video_path).suffix
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    output_path = f"{os.path.splitext(video_path)[0]}_fp{ext}"
+    writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    global_index = 0
+    applied_indices = set()
+    for count in frame_block_counts:
+        success, frame = capture.read()
+        if not success:
+            break
+        coords, h_aligned, w_aligned = _get_block_coordinates(frame.shape[0], frame.shape[1])
+        ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
+        y, cr, cb = cv2.split(ycrcb)
+        region = y[:h_aligned, :w_aligned]
+        frame_map = {}
+        for local_idx in range(len(coords)):
+            global_idx = global_index + local_idx
+            bit = bit_map.get(global_idx)
+            if bit is not None:
+                frame_map[local_idx] = bit
+                applied_indices.add(global_idx)
+        if frame_map:
+            region_modified = _apply_bit_map_to_plane(region, coords, frame_map)
+            y[:h_aligned, :w_aligned] = region_modified
+        merged = cv2.merge([y, cr, cb])
+        writer.write(cv2.cvtColor(merged, cv2.COLOR_YCrCb2BGR))
+        global_index += len(coords)
+    capture.release()
+    writer.release()
+    if len(applied_indices) != len(bit_map):
+        raise ValueError('워터마크를 삽입하기 위한 동영상 길이가 충분하지 않습니다.')
+    return output_path
+
+
+def extract_fingerprint_video(video_path: str, secret: bytes):
+    capture = cv2.VideoCapture(video_path)
+    if not capture.isOpened():
+        return None
+    prefix_bits = []
+    extra_bits = {}
+    global_index = 0
+    while True:
+        success, frame = capture.read()
+        if not success:
+            break
+        coords, h_aligned, w_aligned = _get_block_coordinates(frame.shape[0], frame.shape[1])
+        if not coords:
+            continue
+        ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
+        y = ycrcb[:, :, 0]
+        plane = y[:h_aligned, :w_aligned].astype(np.float32)
+        for local_idx, (y_off, x_off) in enumerate(coords):
+            global_idx = global_index + local_idx
+            block = plane[y_off:y_off + 8, x_off:x_off + 8]
+            bit = _extract_bit_from_block(block)
+            if global_idx < PREFIX_TOTAL_BITS:
+                prefix_bits.append(bit)
+            else:
+                extra_bits[global_idx] = bit
+        global_index += len(coords)
+    capture.release()
+    if global_index == 0:
+        return None
+    return _decode_payload(prefix_bits, extra_bits, global_index, secret)
+
+
+def embed_fingerprint_media(media_path: str, payload: str):
+    secret = app.config['FINGERPRINT_SECRET'].encode('utf-8')
+    ext = Path(media_path).suffix.lower().lstrip('.')
+    if ext in IMAGE_EXTENSIONS:
+        return embed_fingerprint_image(media_path, payload, secret)
+    if ext in VIDEO_EXTENSIONS:
+        return embed_fingerprint_video(media_path, payload, secret)
+    raise ValueError('지원되지 않는 파일 형식입니다.')
+
+
+def extract_fingerprint_media(media_path: str):
+    secret = app.config['FINGERPRINT_SECRET'].encode('utf-8')
+    ext = Path(media_path).suffix.lower().lstrip('.')
+    if ext in IMAGE_EXTENSIONS:
+        return extract_fingerprint_image(media_path, secret)
+    if ext in VIDEO_EXTENSIONS:
+        return extract_fingerprint_video(media_path, secret)
+    return None
 
 def generate_fingerprint_token(username: str) -> str:
     secret = app.config['FINGERPRINT_SECRET'].encode('utf-8')
@@ -255,8 +441,15 @@ if force_https:
         return redirect(url, code=301)
 
 def allowed_file(filename):
-    allowed = app.config.get('ALLOWED_UPLOAD_EXTENSIONS', default_extensions)
+    allowed = app.config.get('ALLOWED_UPLOAD_EXTENSIONS', DEFAULT_EXTENSIONS)
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed
+
+@app.context_processor
+def inject_media_extensions():
+    return {
+        'IMAGE_EXTENSIONS': IMAGE_EXTENSIONS,
+        'VIDEO_EXTENSIONS': VIDEO_EXTENSIONS
+    }
 
 # 5. 라우트 (웹 페이지 로직)
 @app.route('/')
@@ -382,21 +575,26 @@ def upload_file():
             file.save(original_file_path)
 
             token = generate_fingerprint_token(session['username'])
-            fingerprinted_path = embed_fingerprint(original_file_path, token)
-
-            if fingerprinted_path:
-                fingerprinted_filename = os.path.basename(fingerprinted_path)
-                new_image = Image(filename=fingerprinted_filename,
-                                  fingerprint_text=token,
-                                  user_id=session['user_id'])
-                db.session.add(new_image)
-                db.session.commit()
-                return redirect(url_for('upload_success', filename=fingerprinted_filename, original=original_filename))
-            else:
-                flash('핑거프린트 삽입에 실패했습니다.', 'error')
+            try:
+                fingerprinted_path = embed_fingerprint_media(original_file_path, token)
+            except ValueError as exc:
+                flash(str(exc), 'error')
                 return redirect(request.url)
+            except Exception as exc:
+                print(f"Error embedding watermark: {exc}")
+                flash('핑거프린트 삽입 중 오류가 발생했습니다.', 'error')
+                return redirect(request.url)
+
+            fingerprinted_filename = os.path.basename(fingerprinted_path)
+            new_image = Image(filename=fingerprinted_filename,
+                              fingerprint_text=token,
+                              user_id=session['user_id'])
+            db.session.add(new_image)
+            db.session.commit()
+            return redirect(url_for('upload_success', filename=fingerprinted_filename, original=original_filename))
         else:
-            flash('허용된 파일 형식이 아닙니다. (png, jpg, jpeg, gif)', 'error')
+            allowed_list = ', '.join(sorted(app.config.get('ALLOWED_UPLOAD_EXTENSIONS', DEFAULT_EXTENSIONS)))
+            flash(f'허용된 파일 형식이 아닙니다. ({allowed_list})', 'error')
             return redirect(request.url)
     return render_template('upload.html')
 
@@ -427,8 +625,15 @@ def verify_fingerprint():
             filename = secure_filename(file.filename)
             temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{filename}")
             file.save(temp_path)
-            token = extract_fingerprint(temp_path)
-            os.remove(temp_path)
+            try:
+                token = extract_fingerprint_media(temp_path)
+            except Exception as exc:
+                print(f"Error extracting watermark: {exc}")
+                token = None
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+
             if not token:
                 db.session.add(VerificationLog(
                     user_id=session.get('user_id'),
@@ -468,6 +673,10 @@ def verify_fingerprint():
                 'owner_visible': bool(allow_owner_details and matched)
             }
             return render_template('verify.html', result=verification)
+        else:
+            allowed_list = ', '.join(sorted(app.config.get('ALLOWED_UPLOAD_EXTENSIONS', DEFAULT_EXTENSIONS)))
+            flash(f'허용된 파일 형식이 아닙니다. ({allowed_list})', 'error')
+            return redirect(request.url)
     return render_template('verify.html', result=None)
 
 @app.route('/success/<filename>')

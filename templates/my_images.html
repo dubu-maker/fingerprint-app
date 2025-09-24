@@ -8,7 +8,17 @@
     {% for image in images %}
       <div class="col">
         <div class="card h-100">
-          <img src="{{ url_for('uploaded_file', filename=image.filename) }}" class="card-img-top" alt="{{ image.filename }}">
+          {% set ext = image.filename.rsplit('.', 1)[-1]|lower %}
+          {% if ext in IMAGE_EXTENSIONS %}
+            <img src="{{ url_for('uploaded_file', filename=image.filename) }}" class="card-img-top" alt="{{ image.filename }}">
+          {% elif ext in VIDEO_EXTENSIONS %}
+            <video class="card-img-top" controls preload="metadata">
+              <source src="{{ url_for('uploaded_file', filename=image.filename) }}" type="video/{{ ext }}">
+              브라우저가 비디오 태그를 지원하지 않습니다.
+            </video>
+          {% else %}
+            <div class="p-5 text-center text-muted">미리보기를 지원하지 않는 파일입니다.</div>
+          {% endif %}
           <div class="card-body">
             <h5 class="card-title">{{ image.filename }}</h5>
             <p class="card-text">
