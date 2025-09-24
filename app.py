@@ -615,6 +615,30 @@ def my_images():
     user = User.query.get(session['user_id'])
     return render_template('my_images.html', images=user.images)
 
+
+@app.route('/delete-media/<int:image_id>', methods=['POST'])
+def delete_media(image_id):
+    if 'user_id' not in session:
+        flash('먼저 로그인하세요.', 'error')
+        return redirect(url_for('login'))
+
+    media = Image.query.get_or_404(image_id)
+    if media.user_id != session['user_id']:
+        flash('삭제 권한이 없습니다.', 'error')
+        return redirect(url_for('my_images'))
+
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], media.filename)
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except OSError as exc:
+        print(f"Error removing file {file_path}: {exc}")
+
+    db.session.delete(media)
+    db.session.commit()
+    flash(f"'{media.filename}' 파일을 삭제했습니다.")
+    return redirect(url_for('my_images'))
+
 @app.route('/verify', methods=['GET', 'POST'])
 @limiter.limit("10 per minute", methods=['POST'], per_method=True, error_message='검증 요청은 분당 10회로 제한됩니다.')
 def verify_fingerprint():
