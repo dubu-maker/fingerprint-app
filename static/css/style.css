@@ -148,6 +148,17 @@ label {
     padding: 0.85rem 1.8rem;
 }
 
+.hero-illustration {
+    display: flex;
+    justify-content: center;
+}
+
+.hero-image {
+    max-width: min(720px, 90%);
+    border-radius: 24px;
+    box-shadow: 0 25px 50px rgba(15, 23, 42, 0.45), 0 0 0 1px rgba(148, 163, 184, 0.25);
+}
+
 .section-title {
     font-size: 1.6rem;
     font-weight: 700;
