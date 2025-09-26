@@ -28,7 +28,7 @@
                   <li class="list-group-item text-center text-muted">아직 가입한 사용자가 없습니다.</li>
                 {% endfor %}
               </ul>
-              <a href="{{ url_for('show_users') }}" class="btn btn-outline-primary mt-3">전체 사용자 목록 보기</a>
+              <a href="{{ url_for('main.show_users') }}" class="btn btn-outline-primary mt-3">전체 사용자 목록 보기</a>
             </div>
           </div>
         </div>
@@ -39,7 +39,7 @@
       <div class="text-center">
         <div class="media-preview ratio ratio-16x9 mb-4">
           <video class="rounded-3" controls autoplay muted loop>
-            <source src="{{ url_for('serve_video', token=video_token) }}" type="video/mp4">
+            <source src="{{ url_for('main.serve_video', token=video_token) }}" type="video/mp4">
             브라우저가 비디오 태그를 지원하지 않습니다.
           </video>
         </div>
@@ -47,7 +47,7 @@
         <h1 class="hero-heading">{{ session.username }}님, 환영합니다</h1>
         <p class="hero-subtitle">현재 등급 <span class="text-accent fw-semibold">{{ session.plan }}</span> · 워터마크 처리된 미디어에서 당신의 신원을 안전하게 확인합니다.</p>
         <div class="hero-action">
-          <a class="btn btn-primary btn-lg" href="{{ url_for('upload_file') }}">새 워터마크 생성하기</a>
+          <a class="btn btn-primary btn-lg" href="{{ url_for('main.upload_file') }}">새 워터마크 생성하기</a>
         </div>
       </div>
     {% endif %}
@@ -63,8 +63,8 @@
         원본의 아름다움은 보존하고, 안전한 서명만을 남겨 창작물을 지켜보세요.
       </p>
       <div class="hero-action d-flex justify-content-center gap-3 flex-wrap">
-        <a class="btn btn-primary btn-lg" href="{{ url_for('login') }}">로그인</a>
-        <a class="btn btn-outline-primary btn-lg" href="{{ url_for('register') }}">회원가입</a>
+        <a class="btn btn-primary btn-lg" href="{{ url_for('main.login') }}">로그인</a>
+        <a class="btn btn-outline-primary btn-lg" href="{{ url_for('main.register') }}">회원가입</a>
       </div>
     </div>
   {% endif %}

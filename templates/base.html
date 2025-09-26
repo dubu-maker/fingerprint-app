@@ -12,7 +12,7 @@
   <body> 
     <nav class="navbar navbar-expand-lg navbar-dark">
       <div class="container">
-        <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url_for('home') }}">
+        <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url_for('main.home') }}">
           <i class="bi bi-fingerprint" style="font-size: 1.3rem;"></i>
           <span>Fingerprint Lab</span>
         </a>
@@ -25,17 +25,17 @@
           <ul class="navbar-nav centered">
             {% if session.role == 'admin' %}
               <li class="nav-item">
-                <a class="nav-link" href="{{ url_for('show_users') }}">사용자 관리</a>
+                <a class="nav-link" href="{{ url_for('main.show_users') }}">사용자 관리</a>
               </li>
             {% endif %}
             <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('upload_file') }}">이미지 업로드</a>
+              <a class="nav-link" href="{{ url_for('main.upload_file') }}">이미지 업로드</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('my_images') }}">내 이미지</a>
+              <a class="nav-link" href="{{ url_for('main.my_images') }}">내 이미지</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('verify_fingerprint') }}">소유권 확인</a>
+              <a class="nav-link" href="{{ url_for('main.verify_fingerprint') }}">소유권 확인</a>
             </li>
           </ul>
         </div>
@@ -48,16 +48,16 @@
               </a>
             </li>
             <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('logout') }}">
+              <a class="nav-link" href="{{ url_for('main.logout') }}">
                 <i class="bi bi-box-arrow-right"></i> 로그아웃
               </a>
             </li>
           {% else %}
             <li class="nav-item me-3">
-              <a class="nav-link" href="{{ url_for('login') }}">로그인</a>
+              <a class="nav-link" href="{{ url_for('main.login') }}">로그인</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('register') }}">회원가입</a>
+              <a class="nav-link" href="{{ url_for('main.register') }}">회원가입</a>
             </li>
           {% endif %}
         </ul>
