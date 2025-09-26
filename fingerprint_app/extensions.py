@@ -12,4 +12,4 @@ limiter = Limiter(key_func=get_remote_address, default_limits=[])
 def init_extensions(app):
     db.init_app(app)
     csrf.init_app(app)
-    limiter.init_app(app, storage_uri=app.config.get('RATELIMIT_STORAGE_URI', 'memory://'))
+    limiter.init_app(app)
