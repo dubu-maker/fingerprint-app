@@ -25,7 +25,7 @@
           {% endif %}
         </div>
         {% if ext in VIDEO_EXTENSIONS %}
-          <p class="small text-muted">동영상 처리 과정에서 오디오는 제거될 수 있습니다.</p>
+          <p class="small text-muted">동영상의 비디오와 오디오 모두 워터마크 처리 후 유지됩니다.</p>
         {% endif %}
         <div class="mt-3">
           <a href="{{ url_for('uploaded_file', filename=filename) }}" class="btn btn-primary" download>

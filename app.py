@@ -8,10 +8,15 @@ import os
 import random
 import re
 import secrets
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import cv2
 import numpy as np
+from redis import Redis
+from rq import Queue
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from itsdangerous import URLSafeTimedSerializer
@@ -87,8 +92,24 @@ if configured_extensions:
 else:
     app.config['ALLOWED_UPLOAD_EXTENSIONS'] = DEFAULT_EXTENSIONS
 
+FFMPEG_BIN = os.environ.get('FFMPEG_BIN', 'ffmpeg')
+TASK_QUEUE_THRESHOLD_MB = float(os.environ.get('TASK_QUEUE_THRESHOLD_MB', 100))
+USE_TASK_QUEUE = os.environ.get('USE_TASK_QUEUE', '0') == '1'
+
 # --- 권한 및 로깅 설정 ---
 OWNER_DETAIL_ROLES = {'admin', 'owner'}
+
+# --- RQ Queue (optional) ---
+rq_queue = None
+if USE_TASK_QUEUE:
+    redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+    queue_name = os.environ.get('TASK_QUEUE_NAME', 'fingerprinting')
+    try:
+        redis_conn = Redis.from_url(redis_url)
+        rq_queue = Queue(queue_name, connection=redis_conn)
+    except Exception as exc:
+        print(f"[WARN] Redis 큐에 연결할 수 없습니다: {exc}")
+        rq_queue = None
 
 # 3. 데이터베이스 모델 정의
 class User(db.Model):
@@ -124,6 +145,15 @@ PREFIX_SALT_BYTES = 16
 PREFIX_LENGTH_BITS = 16
 PREFIX_TOTAL_BITS = PREFIX_SALT_BYTES * 8 + PREFIX_LENGTH_BITS
 EMBED_DELTA = float(os.environ.get('WATERMARK_DCT_DELTA', 6.0))
+
+
+def run_ffmpeg_command(args: list[str]) -> bool:
+    try:
+        subprocess.run([FFMPEG_BIN, *args], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        print(f"FFmpeg 실행 오류: {exc}")
+        return False
 
 
 def _bitstring_from_bytes(data: bytes) -> list[int]:
@@ -283,6 +313,18 @@ def extract_fingerprint_image(image_path: str, secret: bytes):
 
 def embed_fingerprint_video(video_path: str, payload: str, secret: bytes):
     payload_bytes = payload.encode('utf-8')
+    ext = Path(video_path).suffix
+    audio_temp_path = None
+    temp_video_output = None
+
+    if shutil.which(FFMPEG_BIN):
+        tmp_audio = tempfile.NamedTemporaryFile(suffix='.aac', delete=False)
+        tmp_audio.close()
+        if run_ffmpeg_command(['-y', '-i', video_path, '-vn', '-acodec', 'copy', tmp_audio.name]):
+            audio_temp_path = tmp_audio.name
+        else:
+            os.unlink(tmp_audio.name)
+
     capture = cv2.VideoCapture(video_path)
     if not capture.isOpened():
         raise ValueError('동영상을 읽을 수 없습니다.')
@@ -301,10 +343,14 @@ def embed_fingerprint_video(video_path: str, payload: str, secret: bytes):
     fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    ext = Path(video_path).suffix
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    output_path = f"{os.path.splitext(video_path)[0]}_fp{ext}"
-    writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    temp_video_output = f"{os.path.splitext(video_path)[0]}_fp_video{ext}"
+    final_output = f"{os.path.splitext(video_path)[0]}_fp{ext}"
+    writer = cv2.VideoWriter(temp_video_output, fourcc, fps, (width, height))
+    if not writer.isOpened():
+        capture.release()
+        raise ValueError('워터마크된 동영상을 저장할 수 없습니다.')
+
     global_index = 0
     applied_indices = set()
     for count in frame_block_counts:
@@ -330,9 +376,28 @@ def embed_fingerprint_video(video_path: str, payload: str, secret: bytes):
         global_index += len(coords)
     capture.release()
     writer.release()
+
     if len(applied_indices) != len(bit_map):
         raise ValueError('워터마크를 삽입하기 위한 동영상 길이가 충분하지 않습니다.')
-    return output_path
+
+    try:
+        if audio_temp_path and shutil.which(FFMPEG_BIN):
+            if run_ffmpeg_command(['-y', '-i', temp_video_output, '-i', audio_temp_path, '-c', 'copy', final_output]):
+                os.remove(temp_video_output)
+            else:
+                os.replace(temp_video_output, final_output)
+        else:
+            os.replace(temp_video_output, final_output)
+    finally:
+        if audio_temp_path and os.path.exists(audio_temp_path):
+            os.remove(audio_temp_path)
+        if os.path.exists(temp_video_output) and temp_video_output != final_output:
+            try:
+                os.remove(temp_video_output)
+            except OSError:
+                pass
+
+    return final_output
 
 
 def extract_fingerprint_video(video_path: str, secret: bytes):
@@ -385,6 +450,19 @@ def extract_fingerprint_media(media_path: str):
     if ext in VIDEO_EXTENSIONS:
         return extract_fingerprint_video(media_path, secret)
     return None
+
+
+def process_watermark_job(user_id: int, username: str, original_filename: str, original_path: str, token: str):
+    with app.app_context():
+        fingerprinted_path = embed_fingerprint_media(original_path, token)
+        fingerprinted_filename = os.path.basename(fingerprinted_path)
+        new_image = Image(filename=fingerprinted_filename,
+                          fingerprint_text=token,
+                          user_id=user_id)
+        db.session.add(new_image)
+        db.session.commit()
+        print(f"[QUEUE] {username} 파일 처리 완료: {fingerprinted_filename}")
+        return fingerprinted_filename
 
 def generate_fingerprint_token(username: str) -> str:
     secret = app.config['FINGERPRINT_SECRET'].encode('utf-8')
@@ -584,6 +662,18 @@ def upload_file():
             file.save(original_file_path)
 
             token = generate_fingerprint_token(session['username'])
+            ext = original_filename.rsplit('.', 1)[-1].lower()
+            file_size_mb = os.path.getsize(original_file_path) / (1024 * 1024)
+            use_queue = rq_queue is not None and (ext in VIDEO_EXTENSIONS or file_size_mb >= TASK_QUEUE_THRESHOLD_MB)
+
+            if use_queue:
+                job = rq_queue.enqueue('app.process_watermark_job',
+                                       args=(session['user_id'], session['username'], original_filename, original_file_path, token),
+                                       result_ttl=3600,
+                                       failure_ttl=3600)
+                flash('워터마크 작업이 백그라운드에서 실행 중입니다. 처리 상태 페이지로 이동합니다.')
+                return redirect(url_for('processing_status', job_id=job.get_id(), original=original_filename))
+
             try:
                 fingerprinted_path = embed_fingerprint_media(original_file_path, token)
             except ValueError as exc:
@@ -711,6 +801,37 @@ def verify_fingerprint():
             flash(f'허용된 파일 형식이 아닙니다. ({allowed_list})', 'error')
             return redirect(request.url)
     return render_template('verify.html', result=None)
+
+
+@app.route('/processing/<job_id>')
+def processing_status(job_id):
+    if not rq_queue:
+        flash('작업 대기열이 활성화되어 있지 않습니다.', 'error')
+        return redirect(url_for('upload_file'))
+
+    try:
+        job = rq_queue.fetch_job(job_id)
+    except Exception as exc:
+        print(f"Error fetching job {job_id}: {exc}")
+        job = None
+
+    if job is None:
+        flash('지정된 작업을 찾을 수 없습니다.', 'error')
+        return redirect(url_for('upload_file'))
+
+    if job.is_failed:
+        flash('워터마크 처리 중 오류가 발생했습니다.', 'error')
+        return redirect(url_for('upload_file'))
+
+    if job.is_finished:
+        fingerprinted_filename = job.result
+        if not fingerprinted_filename:
+            flash('처리 결과를 확인할 수 없습니다.', 'error')
+            return redirect(url_for('upload_file'))
+        original = request.args.get('original')
+        return redirect(url_for('upload_success', filename=fingerprinted_filename, original=original))
+
+    return render_template('processing.html', job_id=job_id, original=request.args.get('original'))
 
 @app.route('/success/<filename>')
 def upload_success(filename):

@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="text-center">
+  <h1 class="section-title mb-3">워터마크 처리 중</h1>
+  <p class="hero-subtitle">현재 업로드한 파일에 보이지 않는 서명을 새기는 중입니다. 잠시만 기다려 주세요.</p>
+  <div class="d-flex justify-content-center my-4">
+    <div class="spinner-border text-accent" role="status" aria-hidden="true"></div>
+  </div>
+  <p class="text-muted">완료되면 이 페이지가 자동으로 새로고침됩니다.</p>
+  <meta http-equiv="refresh" content="4">
+  <a class="btn btn-outline-primary mt-3" href="{{ url_for('upload_file') }}">다른 파일 업로드</a>
+</div>
+{% endblock %}

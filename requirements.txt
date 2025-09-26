@@ -14,3 +14,5 @@ Flask-WTF
 Flask-Limiter>=2.8.0
 numpy
 opencv-python-headless
+redis
+rq
