@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for, send_from_directory
+from flask_babel import gettext as _, get_locale
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
@@ -30,7 +31,9 @@ def inject_globals():
     return {
         'IMAGE_EXTENSIONS': current_app.config['IMAGE_EXTENSIONS'],
         'VIDEO_EXTENSIONS': current_app.config['VIDEO_EXTENSIONS'],
-        'datetime': datetime
+        'datetime': datetime,
+        'available_languages': current_app.config['LANGUAGES'],
+        'current_locale': str(get_locale())
     }
 
 
@@ -44,9 +47,17 @@ def home():
     if session.get('role') == 'admin':
         user_count = User.query.count()
         recent_users = User.query.order_by(User.id.desc()).limit(5).all()
-        return render_template('home.html', user_count=user_count, recent_users=recent_users, video_token=video_token)
+        recent_logs = VerificationLog.query.order_by(VerificationLog.created_at.desc()).limit(6).all()
+        return render_template('home.html', user_count=user_count, recent_users=recent_users,
+                               recent_logs=recent_logs, video_token=video_token)
 
-    return render_template('home.html', video_token=video_token)
+    recent_logs = None
+    recent_media = None
+    if session.get('user_id'):
+        recent_logs = VerificationLog.query.filter_by(user_id=session['user_id']).order_by(VerificationLog.created_at.desc()).limit(6).all()
+        recent_media = Image.query.filter_by(user_id=session['user_id']).order_by(Image.timestamp.desc()).limit(6).all()
+
+    return render_template('home.html', video_token=video_token, recent_logs=recent_logs, recent_media=recent_media)
 
 
 @main_bp.route('/register', methods=['GET', 'POST'])
@@ -56,16 +67,16 @@ def register():
         password = request.form['password']
 
         if not current_app.config['USERNAME_REGEX'].match(username):
-            flash('사용자 이름은 4~20자의 영문, 숫자, 언더바(_)만 사용할 수 있습니다.', 'error')
+            flash(_('사용자 이름은 4~20자의 영문, 숫자, 언더바(_)만 사용할 수 있습니다.'), 'error')
             return redirect(url_for('main.register'))
 
         if not current_app.config['PASSWORD_REGEX'].match(password):
-            flash('비밀번호는 최소 8자 이상이며, 대/소문자, 숫자, 특수문자(@$!%*?&)를 각각 하나 이상 포함해야 합니다.', 'error')
+            flash(_('비밀번호는 최소 8자 이상이며, 대/소문자, 숫자, 특수문자(@$!%*?&)를 각각 하나 이상 포함해야 합니다.'), 'error')
             return redirect(url_for('main.register'))
 
         existing_user = User.query.filter_by(username=username).first()
         if existing_user:
-            flash('이미 존재하는 사용자 이름입니다.', 'error')
+            flash(_('이미 존재하는 사용자 이름입니다.'), 'error')
             return redirect(url_for('main.register'))
 
         hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
@@ -74,7 +85,7 @@ def register():
         db.session.add(new_user)
         db.session.commit()
 
-        flash(f"'{username}' 계정 가입 성공! 이제 로그인하세요.")
+        flash(_("'%(username)s' 계정 가입 성공! 이제 로그인하세요.", username=username))
         return redirect(url_for('main.login'))
 
     return render_template('register.html')
@@ -93,14 +104,14 @@ def login():
             session['plan'] = user.plan
             return redirect(url_for('main.home'))
         else:
-            flash('사용자 이름이 없거나 비밀번호가 틀렸습니다.', 'error')
+            flash(_('사용자 이름이 없거나 비밀번호가 틀렸습니다.'), 'error')
     return render_template('login.html')
 
 
 @main_bp.route('/logout')
 def logout():
     session.clear()
-    flash('성공적으로 로그아웃되었습니다.')
+    flash(_('성공적으로 로그아웃되었습니다.'))
     return redirect(url_for('main.home'))
 
 
@@ -109,51 +120,52 @@ def show_users():
     if session.get('role') == 'admin':
         all_users = User.query.all()
         return render_template('users.html', users=all_users)
-    flash('접근 권한이 없습니다.', 'error')
+    flash(_('접근 권한이 없습니다.'), 'error')
     return redirect(url_for('main.login'))
 
 
 @main_bp.route('/delete_user/<int:user_id>', methods=['POST'])
 def delete_user(user_id):
     if session.get('role') != 'admin':
-        flash('삭제 권한이 없습니다.', 'error')
+        flash(_('삭제 권한이 없습니다.'), 'error')
         return redirect(url_for('main.home'))
     user_to_delete = User.query.get_or_404(user_id)
     db.session.delete(user_to_delete)
     db.session.commit()
-    flash(f'사용자 ID {user_id}가 성공적으로 삭제되었습니다.')
+    flash(_('사용자 ID %(user_id)s가 성공적으로 삭제되었습니다.', user_id=user_id))
     return redirect(url_for('main.show_users'))
 
 
 @main_bp.route('/update_plan/<int:user_id>', methods=['POST'])
 def update_plan(user_id):
     if session.get('role') != 'admin':
-        flash('권한이 없습니다.', 'error')
+        flash(_('권한이 없습니다.'), 'error')
         return redirect(url_for('main.home'))
     new_plan = request.form.get('plan')
     if new_plan not in ['basic', 'premium']:
-        flash('잘못된 등급입니다.', 'error')
+        flash(_('잘못된 등급입니다.'), 'error')
         return redirect(url_for('main.show_users'))
     user_to_update = User.query.get_or_404(user_id)
     user_to_update.plan = new_plan
     db.session.commit()
-    flash(f'{user_to_update.username} 사용자의 등급이 {new_plan}(으)로 변경되었습니다.')
+    flash(_('%(username)s 사용자의 등급이 %(plan)s(으)로 변경되었습니다.',
+            username=user_to_update.username, plan=new_plan))
     return redirect(url_for('main.show_users'))
 
 
 @main_bp.route('/upload', methods=['GET', 'POST'])
-@limiter.limit("5 per minute", methods=['POST'], per_method=True, error_message='업로드 요청은 분당 5회로 제한됩니다.')
+@limiter.limit("5 per minute", methods=['POST'], per_method=True)
 def upload_file():
     if 'username' not in session:
-        flash('이미지를 업로드하려면 먼저 로그인하세요.', 'error')
+        flash(_('이미지를 업로드하려면 먼저 로그인하세요.'), 'error')
         return redirect(url_for('main.login'))
     if request.method == 'POST':
         if 'file' not in request.files:
-            flash('파일이 없습니다.')
+            flash(_('파일이 없습니다.'), 'error')
             return redirect(request.url)
         file = request.files['file']
         if file.filename == '':
-            flash('선택된 파일이 없습니다.')
+            flash(_('선택된 파일이 없습니다.'), 'error')
             return redirect(request.url)
         if file and allowed_file(file.filename):
             original_filename = secure_filename(file.filename)
@@ -173,7 +185,7 @@ def upload_file():
                                        args=(session['user_id'], session['username'], original_filename, original_file_path, token),
                                        result_ttl=3600,
                                        failure_ttl=3600)
-                flash('워터마크 작업이 백그라운드에서 실행 중입니다. 처리 상태 페이지로 이동합니다.')
+                flash(_('워터마크 작업이 백그라운드에서 실행 중입니다. 처리 상태 페이지로 이동합니다.'))
                 return redirect(url_for('main.processing_status', job_id=job.get_id(), original=original_filename))
 
             try:
@@ -183,7 +195,7 @@ def upload_file():
                 return redirect(request.url)
             except Exception as exc:
                 current_app.logger.exception("Error embedding watermark: %s", exc)
-                flash('핑거프린트 삽입 중 오류가 발생했습니다.', 'error')
+                flash(_('핑거프린트 삽입 중 오류가 발생했습니다.'), 'error')
                 return redirect(request.url)
 
             fingerprinted_filename = os.path.basename(fingerprinted_path)
@@ -195,7 +207,7 @@ def upload_file():
             return redirect(url_for('main.upload_success', filename=fingerprinted_filename, original=original_filename))
         else:
             allowed_list = ', '.join(sorted(current_app.config['ALLOWED_UPLOAD_EXTENSIONS']))
-            flash(f'허용된 파일 형식이 아닙니다. ({allowed_list})', 'error')
+            flash(_('허용된 파일 형식이 아닙니다. (%(allowed)s)', allowed=allowed_list), 'error')
             return redirect(request.url)
     return render_template('upload.html')
 
@@ -203,7 +215,7 @@ def upload_file():
 @main_bp.route('/my-images')
 def my_images():
     if 'user_id' not in session:
-        flash('먼저 로그인하세요.', 'error')
+        flash(_('먼저 로그인하세요.'), 'error')
         return redirect(url_for('main.login'))
     user = User.query.get(session['user_id'])
     return render_template('my_images.html', images=user.images)
@@ -212,12 +224,12 @@ def my_images():
 @main_bp.route('/delete-media/<int:image_id>', methods=['POST'])
 def delete_media(image_id):
     if 'user_id' not in session:
-        flash('먼저 로그인하세요.', 'error')
+        flash(_('먼저 로그인하세요.'), 'error')
         return redirect(url_for('main.login'))
 
     media = Image.query.get_or_404(image_id)
     if media.user_id != session['user_id']:
-        flash('삭제 권한이 없습니다.', 'error')
+        flash(_('삭제 권한이 없습니다.'), 'error')
         return redirect(url_for('main.my_images'))
 
     file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], media.filename)
@@ -229,24 +241,24 @@ def delete_media(image_id):
 
     db.session.delete(media)
     db.session.commit()
-    flash(f"'{media.filename}' 파일을 삭제했습니다.")
+    flash(_("'%(filename)s' 파일을 삭제했습니다.", filename=media.filename))
     return redirect(url_for('main.my_images'))
 
 
 @main_bp.route('/verify', methods=['GET', 'POST'])
-@limiter.limit("10 per minute", methods=['POST'], per_method=True, error_message='검증 요청은 분당 10회로 제한됩니다.')
+@limiter.limit("10 per minute", methods=['POST'], per_method=True)
 def verify_fingerprint():
     if 'user_id' not in session:
-        flash('소유권 확인을 사용하려면 먼저 로그인하세요.', 'error')
+        flash(_('소유권 확인을 사용하려면 먼저 로그인하세요.'), 'error')
         return redirect(url_for('main.login'))
 
     if request.method == 'POST':
         if 'file' not in request.files:
-            flash('파일이 없습니다.', 'error')
+            flash(_('파일이 없습니다.'), 'error')
             return redirect(request.url)
         file = request.files['file']
         if file.filename == '':
-            flash('선택된 파일이 없습니다.', 'error')
+            flash(_('선택된 파일이 없습니다.'), 'error')
             return redirect(request.url)
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
@@ -273,7 +285,7 @@ def verify_fingerprint():
                     matched=False
                 ))
                 db.session.commit()
-                flash('숨겨진 데이터가 감지되지 않았습니다.', 'error')
+                flash(_('숨겨진 데이터가 감지되지 않았습니다.'), 'error')
                 return redirect(request.url)
 
             owner, issued_at = watermark.resolve_owner(token)
@@ -302,7 +314,7 @@ def verify_fingerprint():
             return render_template('verify.html', result=verification)
         else:
             allowed_list = ', '.join(sorted(current_app.config['ALLOWED_UPLOAD_EXTENSIONS']))
-            flash(f'허용된 파일 형식이 아닙니다. ({allowed_list})', 'error')
+            flash(_('허용된 파일 형식이 아닙니다. (%(allowed)s)', allowed=allowed_list), 'error')
             return redirect(request.url)
     return render_template('verify.html', result=None)
 
@@ -311,7 +323,7 @@ def verify_fingerprint():
 def processing_status(job_id):
     rq_queue = current_app.extensions.get('rq_queue')
     if not rq_queue:
-        flash('작업 대기열이 활성화되어 있지 않습니다.', 'error')
+        flash(_('작업 대기열이 활성화되어 있지 않습니다.'), 'error')
         return redirect(url_for('main.upload_file'))
 
     try:
@@ -321,17 +333,17 @@ def processing_status(job_id):
         job = None
 
     if job is None:
-        flash('지정된 작업을 찾을 수 없습니다.', 'error')
+        flash(_('지정된 작업을 찾을 수 없습니다.'), 'error')
         return redirect(url_for('main.upload_file'))
 
     if job.is_failed:
-        flash('워터마크 처리 중 오류가 발생했습니다.', 'error')
+        flash(_('워터마크 처리 중 오류가 발생했습니다.'), 'error')
         return redirect(url_for('main.upload_file'))
 
     if job.is_finished:
         fingerprinted_filename = job.result
         if not fingerprinted_filename:
-            flash('처리 결과를 확인할 수 없습니다.', 'error')
+            flash(_('처리 결과를 확인할 수 없습니다.'), 'error')
             return redirect(url_for('main.upload_file'))
         original = request.args.get('original')
         return redirect(url_for('main.upload_success', filename=fingerprinted_filename, original=original))
@@ -348,6 +360,17 @@ def upload_success(filename):
 @main_bp.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(current_app.config['UPLOAD_FOLDER'], filename)
+
+
+@main_bp.route('/set-locale/<locale>')
+def set_locale(locale):
+    supported = current_app.config['LANGUAGES']
+    if locale not in supported:
+        flash(_('지원하지 않는 언어입니다.'), 'error')
+    else:
+        session['locale'] = locale
+        flash(_('언어 설정이 업데이트되었습니다.'), 'success')
+    return redirect(request.referrer or url_for('main.home'))
 
 
 @main_bp.route('/serve_video/<token>')

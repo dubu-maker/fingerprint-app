@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h1 class="mb-4">내 이미지 갤러리</h1>
+<h1 class="mb-4">{{ _('내 미디어 갤러리') }}</h1>
 
 {% if images %}
   <div class="row row-cols-1 row-cols-md-3 g-4">
@@ -15,27 +15,27 @@
             {% elif ext in VIDEO_EXTENSIONS %}
               <video controls preload="metadata">
                 <source src="{{ url_for('main.uploaded_file', filename=image.filename) }}" type="video/{{ ext }}">
-                브라우저가 비디오 태그를 지원하지 않습니다.
+                {{ _('브라우저가 비디오 태그를 지원하지 않습니다.') }}
               </video>
             {% else %}
-              <div class="p-5 text-center text-muted">미리보기를 지원하지 않는 파일입니다.</div>
+              <div class="p-5 text-center text-muted">{{ _('미리보기를 지원하지 않는 파일입니다.') }}</div>
             {% endif %}
           </div>
           <div class="card-body">
             <h5 class="card-title">{{ image.filename }}</h5>
             <p class="card-text">
               <small class="text-muted">
-                업로드: {{ image.timestamp.strftime('%Y-%m-%d %H:%M') }}<br>
-                보안 토큰: <strong>{{ image.fingerprint_text[-12:] }}</strong>
+                {{ _('업로드: %(timestamp)s', timestamp=image.timestamp.strftime('%Y-%m-%d %H:%M')) }}<br>
+                {{ _('보안 토큰:') }} <strong>{{ image.fingerprint_text[-12:] }}</strong>
               </small>
             </p>
             <div class="d-flex gap-2">
               <a href="{{ url_for('main.uploaded_file', filename=image.filename) }}" class="btn btn-outline-primary btn-sm" download>
-                다운로드
+                {{ _('다운로드') }}
               </a>
-              <form action="{{ url_for('main.delete_media', image_id=image.id) }}" method="post" onsubmit="return confirm('정말로 {{ image.filename }} 파일을 삭제하시겠습니까?');">
+              <form action="{{ url_for('main.delete_media', image_id=image.id) }}" method="post" onsubmit="return confirm('{{ _('정말로 %(filename)s 파일을 삭제하시겠습니까?', filename=image.filename) }}');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn btn-outline-danger btn-sm">삭제</button>
+                <button type="submit" class="btn btn-outline-danger btn-sm">{{ _('삭제') }}</button>
               </form>
             </div>
           </div>
@@ -45,7 +45,7 @@
   </div>
 {% else %}
   <div class="alert alert-secondary text-center">
-    아직 업로드한 이미지가 없습니다. '이미지 업로드' 메뉴에서 첫 이미지를 업로드해 보세요!
+    {{ _('아직 업로드한 파일이 없습니다. 상단 메뉴에서 첫 워터마크를 생성해 보세요!') }}
   </div>
 {% endif %}
 {% endblock %}

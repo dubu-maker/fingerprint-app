@@ -3,19 +3,19 @@
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-6">
-    <h1 class="text-center">로그인</h1>
-    <form action="{{ url_for('main.login') }}" method="post">
+    <h1 class="text-center">{{ _('로그인') }}</h1>
+    <form action="{{ url_for('main.login') }}" method="post" novalidate>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-3">
-        <label for="username" class="form-label">사용자 이름:</label>
-        <input type="text" class="form-control" id="username" name="username">
+        <label for="username" class="form-label">{{ _('사용자 이름') }}</label>
+        <input type="text" class="form-control" id="username" name="username" autocomplete="username">
       </div>
       <div class="mb-3">
-        <label for="password" class="form-label">비밀번호:</label>
-        <input type="password" class="form-control" id="password" name="password">
+        <label for="password" class="form-label">{{ _('비밀번호') }}</label>
+        <input type="password" class="form-control" id="password" name="password" autocomplete="current-password">
       </div>
       <div class="d-grid">
-        <button type="submit" class="btn btn-primary">로그인</button>
+        <button type="submit" class="btn btn-primary">{{ _('로그인') }}</button>
       </div>
     </form>
   </div>

@@ -5,24 +5,31 @@
   <div class="col-md-8">
     <div class="card">
       <div class="card-body text-center">
-        <h1 class="card-title">디지털 핑거프린팅</h1>
+        <h1 class="card-title">{{ _('디지털 핑거프린팅') }}</h1>
         <p class="card-text text-muted">
-          '{{ session.username }}'님의 고유 정보가 이미지 또는 동영상에 삽입됩니다.<br>
-          아래에서 핑거프린트를 적용할 파일을 선택하세요.
+          {{ _("'%(username)s'님의 고유 정보가 이미지 또는 동영상에 삽입됩니다.", username=session.username) }}<br>
+          {{ _('아래에서 핑거프린트를 적용할 파일을 선택하세요.') }}
         </p>
-        
-        <form method="post" enctype="multipart/form-data" class="mt-4">
+
+        <form method="post" enctype="multipart/form-data" class="mt-4" data-progress data-progress-target="#uploadProgress" data-progress-start="{{ _('업로드를 준비하고 있습니다...') }}" data-progress-complete="{{ _('처리가 완료되었습니다. 결과 페이지로 이동합니다...') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="input-group">
-            <input type="file" class="form-control" name="file" required>
+            <input type="file" class="form-control" name="file" required aria-label="{{ _('워터마크를 적용할 파일 선택') }}">
             <button type="submit" class="btn btn-primary">
-              <i class="bi bi-upload"></i> 업로드 및 적용
+              <i class="bi bi-upload" aria-hidden="true"></i> {{ _('업로드 및 적용') }}
             </button>
           </div>
           <p class="form-text mt-3">
-            지원 형식: 이미지 ({{ IMAGE_EXTENSIONS|join(', ') }}) / 동영상 ({{ VIDEO_EXTENSIONS|join(', ') }}).
+            {{ _('지원 형식: 이미지 (%(images)s) / 동영상 (%(videos)s).', images=IMAGE_EXTENSIONS|join(', '), videos=VIDEO_EXTENSIONS|join(', ')) }}
           </p>
         </form>
+
+        <div id="uploadProgress" class="progress-wrapper d-none" aria-live="polite">
+          <div class="progress">
+            <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">0%</div>
+          </div>
+          <p class="progress-status small text-muted mt-2">{{ _('업로드 진행률을 계산 중입니다...') }}</p>
+        </div>
       </div>
     </div>
   </div>

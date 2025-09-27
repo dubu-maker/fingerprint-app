@@ -4,43 +4,43 @@
 <div class="row justify-content-center">
   <div class="col-md-8 text-center">
     <div class="alert alert-success" role="alert">
-      <h4 class="alert-heading">핑거프린팅 성공!</h4>
-      <p>'{{ filename }}' 파일에 핑거프린트가 성공적으로 삽입되었습니다.</p>
+      <h4 class="alert-heading">{{ _('핑거프린팅 성공!') }}</h4>
+      <p>{{ _("'%(filename)s' 파일에 핑거프린트가 성공적으로 삽입되었습니다.", filename=filename) }}</p>
     </div>
 
     <div class="card">
       <div class="card-body">
-        <h5 class="card-title mb-3">결과 미디어</h5>
+        <h5 class="card-title mb-3">{{ _('결과 미디어') }}</h5>
         {% set ext = filename.rsplit('.', 1)[-1]|lower %}
         <div class="media-preview mb-3">
           {% if ext in IMAGE_EXTENSIONS %}
-            <img src="{{ url_for('main.uploaded_file', filename=filename) }}" alt="Watermarked Media">
+            <img src="{{ url_for('main.uploaded_file', filename=filename) }}" alt="{{ _('워터마크된 미디어 미리보기') }}">
           {% elif ext in VIDEO_EXTENSIONS %}
             <video controls preload="metadata">
               <source src="{{ url_for('main.uploaded_file', filename=filename) }}" type="video/{{ ext }}">
-              브라우저가 비디오 태그를 지원하지 않습니다.
+              {{ _('브라우저가 비디오 태그를 지원하지 않습니다.') }}
             </video>
           {% else %}
-            <div class="p-5 text-center text-muted">해당 형식은 미리보기를 지원하지 않습니다.</div>
+            <div class="p-5 text-center text-muted">{{ _('해당 형식은 미리보기를 지원하지 않습니다.') }}</div>
           {% endif %}
         </div>
         {% if ext in VIDEO_EXTENSIONS %}
-          <p class="small text-muted">동영상의 비디오와 오디오 모두 워터마크 처리 후 유지됩니다.</p>
+          <p class="small text-muted">{{ _('동영상의 비디오와 오디오 모두 워터마크 처리 후 유지됩니다.') }}</p>
         {% endif %}
         <div class="mt-3">
           <a href="{{ url_for('main.uploaded_file', filename=filename) }}" class="btn btn-primary" download>
-            결과 파일 다운로드
+            {{ _('결과 파일 다운로드') }}
           </a>
           {% if original_filename %}
-            <p class="mt-2 small text-muted">원본 파일명: {{ original_filename }}</p>
+            <p class="mt-2 small text-muted">{{ _('원본 파일명: %(name)s', name=original_filename) }}</p>
           {% endif %}
         </div>
       </div>
     </div>
     
-    <div class="mt-4">
-      <a href="{{ url_for('main.home') }}" class="btn btn-secondary">홈으로 돌아가기</a>
-      <a href="{{ url_for('main.upload_file') }}" class="btn btn-info">다른 이미지 업로드</a>
+    <div class="mt-4 d-flex justify-content-center gap-2 flex-wrap">
+      <a href="{{ url_for('main.home') }}" class="btn btn-secondary">{{ _('홈으로 돌아가기') }}</a>
+      <a href="{{ url_for('main.upload_file') }}" class="btn btn-info">{{ _('다른 미디어 업로드') }}</a>
     </div>
   </div>
 </div>

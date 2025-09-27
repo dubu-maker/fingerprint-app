@@ -3,45 +3,52 @@
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-8">
-    <h1 class="text-center mb-4">소유권 확인</h1>
-    <p class="text-center text-muted">워터마크가 삽입된 이미지 또는 동영상에서 보안 토큰을 복원하여 누가 발급했는지 확인합니다.</p>
+    <h1 class="text-center mb-4">{{ _('소유권 확인') }}</h1>
+    <p class="text-center text-muted">{{ _('워터마크가 삽입된 이미지 또는 동영상에서 보안 토큰을 복원하여 누가 발급했는지 확인합니다.') }}</p>
 
     <div class="card mb-4">
       <div class="card-body">
-        <h5 class="card-title">사용 방법</h5>
-        <p class="card-text small text-muted mb-1">1. 핑거프린팅된 이미지를 선택해 업로드합니다.</p>
-        <p class="card-text small text-muted mb-1">2. 서버가 이미지에 숨겨둔 암호화된 토큰을 복원합니다.</p>
-        <p class="card-text small text-muted mb-0">3. 일치 여부는 안내하며, 세부 정보는 권한이 있는 사용자에게만 공개됩니다.</p>
+        <h5 class="card-title">{{ _('사용 방법') }}</h5>
+        <p class="card-text small text-muted mb-1">{{ _('1. 핑거프린팅된 미디어를 선택해 업로드합니다.') }}</p>
+        <p class="card-text small text-muted mb-1">{{ _('2. 서버가 숨겨둔 암호화된 토큰을 복원합니다.') }}</p>
+        <p class="card-text small text-muted mb-0">{{ _('3. 일치 여부는 안내하며, 세부 정보는 권한이 있는 사용자에게만 공개됩니다.') }}</p>
       </div>
     </div>
-    
-    <form method="post" enctype="multipart/form-data" class="mb-4">
+
+    <form method="post" enctype="multipart/form-data" class="mb-4" data-progress data-progress-target="#verifyProgress" data-progress-start="{{ _('검증을 시작합니다...') }}" data-progress-complete="{{ _('검증이 완료되었습니다. 결과를 불러오는 중입니다...') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="input-group">
-        <input type="file" name="file" class="form-control" required>
+        <input type="file" name="file" class="form-control" required aria-label="{{ _('검증할 파일 선택') }}">
         <button type="submit" class="btn btn-success">
-          <i class="bi bi-patch-check"></i> 검증하기
+          <i class="bi bi-patch-check" aria-hidden="true"></i> {{ _('검증하기') }}
         </button>
       </div>
     </form>
 
+    <div id="verifyProgress" class="progress-wrapper d-none" aria-live="polite">
+      <div class="progress">
+        <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">0%</div>
+      </div>
+      <p class="progress-status small text-muted mt-2">{{ _('파일을 분석하는 중입니다...') }}</p>
+    </div>
+
     {% if result %}
       <div class="card border-{{ 'success' if result.matched else 'warning' }}">
         <div class="card-body">
-          <h4 class="card-title text-center">검증 결과</h4>
-          <p class="mb-2 text-break"><strong>보안 토큰:</strong> {{ result.token }}</p>
+          <h4 class="card-title text-center">{{ _('검증 결과') }}</h4>
+          <p class="mb-2 text-break"><strong>{{ _('보안 토큰') }}:</strong> {{ result.token }}</p>
           {% if result.matched %}
             {% if result.owner_visible and result.owner %}
-              <p class="mb-1"><strong>추정 소유자:</strong> {{ result.owner }}</p>
+              <p class="mb-1"><strong>{{ _('추정 소유자') }}:</strong> {{ result.owner }}</p>
               {% if result.issued_at %}
-                <p class="mb-1"><strong>발급 시각:</strong> {{ result.issued_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                <p class="mb-1"><strong>{{ _('발급 시각') }}:</strong> {{ result.issued_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
               {% endif %}
-              <p class="small text-muted mb-0">이 이미지는 위 사용자 계정에서 발급된 것으로 확인되었습니다.</p>
+              <p class="small text-muted mb-0">{{ _('이 미디어는 위 사용자 계정에서 발급된 것으로 확인되었습니다.') }}</p>
             {% else %}
-              <p class="mb-0">등록된 사용자와 일치하지만 세부 정보는 표시 권한이 있는 계정에서만 확인할 수 있습니다.</p>
+              <p class="mb-0">{{ _('등록된 사용자와 일치하지만 세부 정보는 표시 권한이 있는 계정에서만 확인할 수 있습니다.') }}</p>
             {% endif %}
           {% else %}
-            <p class="mb-0">등록된 사용자와 일치하는 정보가 없습니다. 이미지가 수정되었거나 다른 서비스에서 생성된 파일일 수 있습니다.</p>
+            <p class="mb-0">{{ _('등록된 사용자와 일치하는 정보가 없습니다. 미디어가 수정되었거나 다른 서비스에서 생성된 파일일 수 있습니다.') }}</p>
           {% endif %}
         </div>
       </div>

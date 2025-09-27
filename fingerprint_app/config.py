@@ -13,6 +13,7 @@ class BaseConfig:
     IMAGE_EXTENSIONS = set(IMAGE_EXTENSIONS)
     VIDEO_EXTENSIONS = set(VIDEO_EXTENSIONS)
     OWNER_DETAIL_ROLES = {'admin', 'owner'}
+    LANGUAGES = ['ko', 'en']
 
     SECRET_KEY = os.environ.get('SECRET_KEY', 'a_very_secret_key_for_local_dev')
     FINGERPRINT_SECRET = os.environ.get('FINGERPRINT_SECRET', 'local_fingerprint_secret')
@@ -36,6 +37,9 @@ class BaseConfig:
     PREFERRED_URL_SCHEME = 'https'
     FORCE_HTTPS = os.environ.get('FORCE_HTTPS', '1') == '1'
     ENABLE_SECURE_COOKIES = os.environ.get('ENABLE_SECURE_COOKIES', '1') == '1'
+    BABEL_DEFAULT_LOCALE = os.environ.get('BABEL_DEFAULT_LOCALE', 'ko')
+    BABEL_DEFAULT_TIMEZONE = os.environ.get('BABEL_DEFAULT_TIMEZONE', 'Asia/Seoul')
+    BABEL_TRANSLATION_DIRECTORIES = os.environ.get('BABEL_TRANSLATION_DIRECTORIES', str(BASE_DIR / 'translations'))
 
     WATERMARK_DCT_DELTA = float(os.environ.get('WATERMARK_DCT_DELTA', 6.0))
     FFMPEG_BIN = os.environ.get('FFMPEG_BIN', 'ffmpeg')

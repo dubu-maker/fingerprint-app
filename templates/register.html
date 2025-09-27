@@ -3,21 +3,21 @@
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-6">
-    <h1 class="text-center">회원가입</h1>
-    <form action="{{ url_for('main.register') }}" method="post">
+    <h1 class="text-center">{{ _('회원가입') }}</h1>
+    <form action="{{ url_for('main.register') }}" method="post" novalidate>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-3">
-        <label for="username" class="form-label">사용자 이름:</label>
-        <input type="text" class="form-control" id="username" name="username" required>
-        <div class="form-text">4~20자의 영문과 숫자만 사용 가능합니다.</div>
+        <label for="username" class="form-label">{{ _('사용자 이름') }}</label>
+        <input type="text" class="form-control" id="username" name="username" required autocomplete="username">
+        <div class="form-text">{{ _('4~20자의 영문과 숫자, 언더바(_)만 사용 가능합니다.') }}</div>
       </div>
       <div class="mb-3">
-        <label for="password" class="form-label">비밀번호:</label>
-        <input type="password" class="form-control" id="password" name="password" required>
-        <div class="form-text">최소 8자 이상, 대/소문자, 숫자, 특수문자(@$!%*?&) 각 1개 이상 포함해야 합니다.</div>
+        <label for="password" class="form-label">{{ _('비밀번호') }}</label>
+        <input type="password" class="form-control" id="password" name="password" required autocomplete="new-password">
+        <div class="form-text">{{ _('최소 8자 이상, 대/소문자, 숫자, 특수문자(@$!%*?&) 각 1개 이상 포함해야 합니다.') }}</div>
       </div>
       <div class="d-grid">
-        <button type="submit" class="btn btn-secondary">회원가입</button>
+        <button type="submit" class="btn btn-secondary">{{ _('회원가입') }}</button>
       </div>
     </form>
   </div>

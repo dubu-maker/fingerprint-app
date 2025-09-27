@@ -2,14 +2,15 @@ import os
 import re
 from pathlib import Path
 
-from flask import Flask, redirect, request, url_for, flash
+from flask import Flask, redirect, request, url_for, flash, session
+from flask_babel import gettext as _
 from itsdangerous import URLSafeTimedSerializer
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_limiter.errors import RateLimitExceeded
 from flask_wtf.csrf import CSRFError
 
 from .config import BaseConfig, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
-from .extensions import init_extensions
+from .extensions import init_extensions, babel
 from .routes.main import main_bp
 
 
@@ -64,14 +65,22 @@ def create_app(config_class=BaseConfig):
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(error):
-        flash('보안 검증이 만료되었거나 잘못되었습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.', 'error')
+        flash(_('보안 검증이 만료되었거나 잘못되었습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.'), 'error')
         return redirect(request.referrer or url_for('main.home')), 400
 
     @app.errorhandler(RateLimitExceeded)
     def handle_rate_limit(error):
-        flash('요청이 너무 자주 발생했습니다. 잠시 후 다시 시도해 주세요.', 'error')
+        flash(_('요청이 너무 자주 발생했습니다. 잠시 후 다시 시도해 주세요.'), 'error')
         target = request.referrer or url_for('main.home')
         return redirect(target), 429
+
+    def select_locale():
+        requested = session.get('locale')
+        if requested in app.config['LANGUAGES']:
+            return requested
+        return request.accept_languages.best_match(app.config['LANGUAGES']) or app.config['BABEL_DEFAULT_LOCALE']
+
+    babel.init_app(app, locale_selector=select_locale)
 
     if app.config['FORCE_HTTPS']:
         @app.before_request

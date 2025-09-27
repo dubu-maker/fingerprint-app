@@ -1,15 +1,17 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h1 class="mb-4">가입된 사용자 목록 (관리자 전용)</h1>
+<h1 class="mb-4">{{ _('가입된 사용자 목록 (관리자 전용)') }}</h1>
 
-<table class="table table-striped table-hover">
+<table class="table table-striped table-hover align-middle">
   <thead>
     <tr>
       <th scope="col">ID</th>
-      <th scope="col">Username</th>
-      <th scope="col">Role</th>
-      <th scope="col">Plan</th> <th scope="col">등급 변경</th> <th scope="col">작업</th>
+      <th scope="col">{{ _('사용자 이름') }}</th>
+      <th scope="col">{{ _('역할') }}</th>
+      <th scope="col">{{ _('플랜') }}</th>
+      <th scope="col">{{ _('등급 변경') }}</th>
+      <th scope="col">{{ _('작업') }}</th>
     </tr>
   </thead>
   <tbody>
@@ -32,13 +34,13 @@
             <option value="basic" {% if user.plan == 'basic' %}selected{% endif %}>Basic</option>
             <option value="premium" {% if user.plan == 'premium' %}selected{% endif %}>Premium</option>
           </select>
-          <button type="submit" class="btn btn-primary btn-sm">변경</button>
+          <button type="submit" class="btn btn-primary btn-sm">{{ _('변경') }}</button>
         </form>
       </td>
       <td>
-        <form action="{{ url_for('main.delete_user', user_id=user.id) }}" method="post" onsubmit="return confirm('정말로 {{ user.username }} 사용자를 삭제하시겠습니까?');">
+        <form action="{{ url_for('main.delete_user', user_id=user.id) }}" method="post" onsubmit="return confirm('{{ _('정말로 %(username)s 사용자를 삭제하시겠습니까?', username=user.username) }}');">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="btn btn-danger btn-sm">삭제</button>
+          <button type="submit" class="btn btn-danger btn-sm">{{ _('삭제') }}</button>
         </form>
       </td>
     </tr>
