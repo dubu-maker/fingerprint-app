@@ -18,7 +18,11 @@ PASSWORD_REGEX = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Z
 
 
 def create_app(config_class=BaseConfig):
-    app = Flask(__name__, static_folder=config_class.STATIC_FOLDER)
+    app = Flask(
+        __name__,
+        static_folder=config_class.STATIC_FOLDER,
+        template_folder=config_class.TEMPLATE_FOLDER
+    )
     app.config.from_object(config_class)
 
     Path(app.config['UPLOAD_FOLDER']).mkdir(parents=True, exist_ok=True)

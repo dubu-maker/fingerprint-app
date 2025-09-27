@@ -53,6 +53,7 @@ class BaseConfig:
 
     UPLOAD_FOLDER = str(BASE_DIR / 'uploads')
     STATIC_FOLDER = str(BASE_DIR / 'static')
+    TEMPLATE_FOLDER = str(BASE_DIR / 'templates')
 
 
 class DevelopmentConfig(BaseConfig):
